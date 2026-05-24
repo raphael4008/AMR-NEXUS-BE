@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AMR-Nexus Architecture (Rev 2)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Inter',sans-serif;font-size:13px;line-height:1.7;color:#1a1a2e;background:#fff;padding:40px 60px;max-width:950px;margin:0 auto}
+  h1{font-size:24px;font-weight:700;color:#0f3460;border-bottom:3px solid #16213e;padding-bottom:12px;margin:0 0 8px}
+  h1+blockquote{background:#eef4ff;border-left:4px solid #0f3460;padding:10px 14px;border-radius:4px;color:#1a1a2e;margin:16px 0 24px;font-style:italic;font-size:12.5px}
+  h2{font-size:17px;font-weight:700;color:#0f3460;margin:32px 0 12px;padding-bottom:6px;border-bottom:2px solid #e8eaf6}
+  h3{font-size:14px;font-weight:600;color:#16213e;margin:20px 0 8px;background:#f0f4ff;padding:6px 10px;border-radius:4px;border-left:3px solid #4361ee}
+  h4{font-size:13px;font-weight:600;color:#4361ee;margin:14px 0 6px}
+  p{margin:8px 0}
+  blockquote{background:#fff8e1;border-left:4px solid #f9a825;padding:8px 12px;border-radius:4px;margin:10px 0;font-size:12px}
+  pre{background:#1a1a2e;color:#a8d8ea;padding:16px;border-radius:8px;overflow-x:auto;font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.5;margin:12px 0}
+  code{font-family:'JetBrains Mono',monospace;font-size:11px;background:#f0f0f0;padding:1px 4px;border-radius:3px}
+  pre code{background:none;padding:0;color:#a8d8ea}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12px}
+  th{background:#0f3460;color:#fff;padding:8px 10px;text-align:left;font-weight:600}
+  td{padding:7px 10px;border-bottom:1px solid #e0e0e0}
+  tr:nth-child(even){background:#f8f9ff}
+  tr:hover{background:#eef2ff}
+  hr{border:none;border-top:1px solid #e0e0e0;margin:24px 0}
+  ul,ol{margin:8px 0 8px 20px}
+  li{margin:3px 0}
+  @media print{body{padding:20px 30px}pre{page-break-inside:avoid}h2{page-break-before:auto}}
+</style>
+</head>
+<body>
+<h1>AMR-Nexus One Health Backend — Rev 2 Architecture</h1>
+<blockquote>
+<p><strong>Mission</strong>: A production-ready surveillance platform for Antimicrobial Resistance (AMR) in Kenya, aligned with WHO GLASS, HL7 FHIR, and WOAH standards. Transitioned from a simple data ingestion pipe into a dynamically contextualized Decision-Support, Adaptive Intelligence, and Early Warning platform.</p>
+</blockquote>
+<hr />
+<h2>1. Core Architecture (July 14, 2026 Revision 2)</h2>
+<p>The system is consolidated into 3 High-Performance Tightly Integrated Components:</p>
+
+<h3>Component A: Data Backbone (The Foundation)</h3>
+<ul>
+  <li><strong>Role:</strong> Robust, "real-data ready" schema focused on Human + Poultry data unification.</li>
+  <li><strong>Data Entities:</strong> <code>AMRRecord</code> (core), <code>Alert</code> (AI triggers), <code>Guidance</code> (LLM advisories), <code>GenomicSignal</code>.</li>
+  <li><strong>Ingestion:</strong> <code>POST /api/v1/backbone/ingest/whonet</code> with strict Pydantic validation and data cleaning pipeline (imputing <code>facility_type</code>, <code>sub_county</code>).</li>
+</ul>
+
+<h3>Component B: AI Early Warning Engine (The Detector)</h3>
+<ul>
+  <li><strong>Role:</strong> Unsupervised hotspot detection and time-series forecasting.</li>
+  <li><strong>Anomaly Detection:</strong> Uses <code>IsolationForest</code> via <code>AMRAnomalyEngine</code> to score records and generate <code>Alert</code> records (with <code>hotspot_magnitude</code> and <code>anomaly_score</code>).</li>
+  <li><strong>Forecasting:</strong> On-demand Prophet-based projection via <code>GET /api/v1/intelligence/forecasts/{county}</code>.</li>
+  <li><strong>Notification:</strong> Asynchronous SMS delivery via Africa's Talking (<code>NotificationService</code>) upon high-magnitude alerts.</li>
+</ul>
+
+<h3>Component C: Adaptive Intelligence / LLM Advisory (The Advisor)</h3>
+<ul>
+  <li><strong>Role:</strong> Generates actionable, role-gated markdown advisories using Claude 4.5 Sonnet.</li>
+  <li><strong>Generation:</strong> <code>POST /api/v1/intelligence/alerts/{alert_id}/advisory</code> triggers the <code>LLMAdvisoryEngine</code>.</li>
+  <li><strong>Role-Gating:</strong> System prompts differ based on user role (e.g., National Coordinator vs. County Veterinarian), ensuring contextually appropriate clinical and policy guidance.</li>
+  <li><strong>Graceful Degradation:</strong> LLM API failures persist a <code>PENDING</code> guidance record for retry, ensuring no data loss.</li>
+</ul>
+
+<hr />
+<h2>2. Layer Architecture (Data Flow)</h2>
+<div class="codehilite"><pre><span></span><code>External Sources                  API Layer               Service Layer              Storage
+─────────────────    HTTP POST    ──────────────   calls  ────────────────  writes  ────────────
+ WHONET / DHIS2  ──────────────► backbone.py ──────────► DataCleaner       ──────► PostgreSQL
+                                  (Router)            │   (cleaner.py)             (TimescaleDB)
+                                                      │
+                                                      │   AMRAnomalyEngine
+                                                      └──► (anomaly_detector.py)
+                                                              │
+                                                              ├──► LLMAdvisoryEngine
+                                                              │    (Claude Sonnet 4.5)
+                                                              │
+                                                              └──► NotificationService
+                                                                   (Africa&#39;s Talking)
+
+Auth Flow:  Client ──POST /token──► auth.py ──► security.py (JWT) ──► Bearer Token
+Protected:  Client ──Bearer───────► security.py (decode) ──► RoleChecker(required_role) ──► Route Handler
+</code></pre></div>
+
+<hr />
+<h2>3. Key Modules & Services</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Module</th>
+      <th>File</th>
+      <th>Responsibilities</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Application Factory</strong></td>
+      <td><code>src/main.py</code></td>
+      <td>FastAPI app instantiation, lifespan events (DB startup checks), CORS configuration, and unified route prefix mounting (<code>/api/v1</code>).</td>
+    </tr>
+    <tr>
+      <td><strong>Security</strong></td>
+      <td><code>src/core/security.py</code></td>
+      <td>JWT token encoding/decoding, password hashing, and the <code>RoleChecker</code> dependency for role-based access control.</td>
+    </tr>
+    <tr>
+      <td><strong>Data Models</strong></td>
+      <td><code>src/models/entities.py</code></td>
+      <td>SQLAlchemy ORM definitions: <code>AMRRecord</code>, <code>Alert</code>, <code>Guidance</code>, <code>GenomicSignal</code>.</td>
+    </tr>
+    <tr>
+      <td><strong>Data Cleaner</strong></td>
+      <td><code>src/services/ingestion/cleaner.py</code></td>
+      <td>Calculates quality scores, flags critical failures (missing pathogen/drug), and imputes missing non-critical fields.</td>
+    </tr>
+    <tr>
+      <td><strong>LLM Advisory</strong></td>
+      <td><code>src/services/intelligence/llm_advisory.py</code></td>
+      <td>Compiles context (SHAP, geography, resistance metrics) and queries Anthropic Claude to generate Markdown briefs.</td>
+    </tr>
+    <tr>
+      <td><strong>Forecaster</strong></td>
+      <td><code>src/services/ml_engine/forecaster.py</code></td>
+      <td>Uses Facebook Prophet to forecast resistance trends on a per-county basis.</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr />
+<h2>4. Infrastructure Stack</h2>
+<div class="codehilite"><pre><span></span><code>┌─────────────────────────────────────────────────────────────────┐
+│  Docker Compose                                                 │
+│                                                                 │
+│  ┌──────────────────┐    ┌─────────────────────────────────┐    │
+│  │  api (FastAPI)   │    │  db (PostgreSQL / Timescale)    │    │
+│  │  Port: 8000      │───►│  Port: 5432                     │    │
+│  │  uvicorn server  │    │  Volume: postgres_data          │    │
+│  └──────────────────┘    └─────────────────────────────────┘    │
+│           │                                                     │
+│           ▼                                                     │
+│  ┌──────────────────┐    ┌─────────────────────────────────┐    │
+│  │  redis           │    │  kafka &amp; zookeeper              │    │
+│  │  Port: 6379      │    │  Event streaming buffer         │    │
+│  │  Task buffering  │    │                                 │    │
+│  └──────────────────┘    └─────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
+</code></pre></div>
+<p><strong>Note:</strong> Redis has been integrated for task buffering and future caching of LLM advisories and dashboard telemetry.</p>
+
+<hr />
+<h2>5. Test Infrastructure (120/120 Passing)</h2>
+<p>The hermetic test suite (<code>pytest</code>) ensures pipeline integrity without requiring external services.</p>
+<ul>
+  <li><strong>SQLite In-Memory:</strong> Uses <code>StaticPool</code> to override <code>get_db()</code> dependencies during testing.</li>
+  <li><strong>Mocked External APIs:</strong> <code>anthropic</code>, <code>prophet</code>, and <code>africastalking</code> are mocked at the session level in <code>conftest.py</code>.</li>
+  <li><strong>Comprehensive Coverage:</strong> 
+    <ul>
+      <li><code>test_api.py</code>: Validates Rev 2 schemas and telemetry structure.</li>
+      <li><code>test_security.py</code>: Multi-role RBAC validation.</li>
+      <li><code>test_llm_advisory.py</code>: Component C context building and graceful error handling.</li>
+      <li><code>test_anomaly_engine.py</code>: Component B detection pipeline validation.</li>
+    </ul>
+  </li>
+</ul>
+
+</body>
+</html>
