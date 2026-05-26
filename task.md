@@ -6,7 +6,8 @@ Welcome to the **July 14, 2026, Revision 2** workflow. With 16 people on the tea
 
 ## 1. The Architectural Flow (How Data Moves)
 
-Data flows strictly from **Ingestion** -> **Intelligence** -> **Action**.
+Data flows strictly from **Ingestion** -> **Postgres** -> **External ML Engine**.
+This backend handles the data backbone and the frontend API gateway. The AI/ML team processes our data externally and writes results (Alerts, Guidances) back to the database.
 
 ```mermaid
 graph TD
@@ -19,45 +20,44 @@ graph TD
     B -->|Valid Data| C[(AMRRecord Table)]
     B -->|Invalid| D[Rejected Log]
     
-    C -->|Background Task| E(Isolation Forest Engine)
-    E -->|If Anomaly| F[(Alert Table)]
+    C -.->|Polled via DB/Kafka| E(External AI/ML Engine)
+    E -.->|Writes Result| F[(Alert Table)]
+    E -.->|Writes Result| G[(Guidance Table)]
     
-    F -->|Trigger| G(Claude LLM Engine)
-    G -->|Role: Nat. Coordinator| H[Macro Policy Brief]
-    G -->|Role: County Vet| I[SOP Action Checklist]
+    F --> H[Dashboard Telemetry API]
+    G --> H
     
     class A,B,D infra;
-    class E,G,H,I ml;
-    class C,F db;
+    class E ml;
+    class C,F,G db;
 ```
 
 ---
 
-## 2. Team Boundaries: Who Owns What?
+## 2. Team Boundaries: Pure Backend Focus
 
-To avoid merge conflicts, we have divided the codebase into strict zones.
+We have completely decoupled the AI/ML logic (Isolation Forest, Prophet, Claude) from this repository. The backend is now strictly divided into two distinct zones between Raph and Naomi.
 
-### 🟢 Raph's Zone: Infrastructure & Backbone
+### 🟢 Raph's Zone: Data Backbone & Security
 **Focus:** Database integrity, API routing, data ingestion, and authentication.
 **Core Folders & Files:**
-- `src/api/backbone.py` (Ingestion Endpoints)
-- `src/api/auth.py` (Security & Login)
+- `src/api/backbone.py` (Ingestion Endpoints - unified under `/api/v1`)
+- `src/api/auth.py` (Security & Login - generates valid JWT tokens for RBAC testing)
+- `src/core/security.py` (Role-Based Access Control configuration)
 - `src/models/entities.py` (Database schemas like `AMRRecord`)
 - `src/services/ingestion/cleaner.py` (Data cleaning logic)
 - `src/schemas/backbone.py` (Pydantic validation)
 
-### 🔵 Naomi's Zone: Intelligence & ML
-**Focus:** Prophet forecasting, Anomaly Detection, and LLM Advisories.
+### 🔵 Naomi's Zone: Dashboard & Telemetry APIs
+**Focus:** Exposing data to the frontend, compiling dashboard aggregations, and notifications.
 **Core Folders & Files:**
-- `src/services/ml_engine/anomaly_detector.py` (Isolation Forest)
-- `src/services/ml_engine/forecaster.py` (Facebook Prophet)
-- `src/services/intelligence/llm_advisory.py` (Claude LLM Prompts)
-- `src/schemas/intelligence.py` & `guidance.py` (Outbound ML formats)
+- `src/api/intelligence.py` (Building complex SQL aggregations to serve telemetry to the frontend, e.g., `/intelligence/dashboard/summary`)
+- `src/services/notifications/sms_service.py` (Wiring up Africa's Talking to send SMS alerts)
+- `src/schemas/intelligence.py` (Frontend contract validation schemas)
 
 ### 🟡 Shared / Handoff Zones
 **Focus:** Where Raph and Naomi's code interacts. Modifying these files requires communication.
-- `src/api/intelligence.py`: Raph builds the route, Naomi provides the ML function.
-- `src/models/entities.py`: Naomi needs to add fields to `Alert` or `Guidance`? She must ask Raph to update the SQLAlchemy model.
+- `src/models/entities.py`: Modifying DB schemas.
 - `src/main.py`: App configuration.
 
 ---
@@ -84,31 +84,25 @@ amr-nexus-backend/
 │   │
 │   ├── schemas/                    
 │   │   ├── backbone.py             (Raph)
-│   │   ├── intelligence.py         (Naomi)
-│   │   └── guidance.py             (Naomi)
+│   │   └── intelligence.py         (Naomi)
 │   │
 │   ├── api/                        
 │   │   ├── auth.py                 (Raph)
 │   │   ├── backbone.py             (Raph)
-│   │   └── intelligence.py         (Shared)
+│   │   └── intelligence.py         (Naomi)
 │   │
 │   ├── services/                   
 │   │   ├── ingestion/              [RAPH ZONE]
 │   │   │   └── cleaner.py          
 │   │   │
-│   │   ├── ml_engine/              [NAOMI ZONE]
-│   │   │   ├── anomaly_detector.py 
-│   │   │   └── forecaster.py       
-│   │   │
-│   │   └── intelligence/           [NAOMI ZONE]
-│   │       └── llm_advisory.py     
+│   │   └── notifications/          [NAOMI ZONE]
+│   │       └── sms_service.py      
 │   │
 │   └── utils/                      
 │       └── synthetic_gen.py        (Shared testing tool)
 │
 └── tests/                          [SHARED ZONE]
-    ├── test_api.py                 (Raph)
-    └── test_intelligence.py        (Naomi)
+    └── test_api.py                 (Shared)
 ```
 
 ---
@@ -119,16 +113,11 @@ Follow this process to keep the project moving smoothly toward the July 14 demo:
 
 1. **Branch Naming:**
    - Raph: `feat/raph-data-cleaner` or `fix/raph-auth-bug`
-   - Naomi: `feat/naomi-shap-values` or `fix/naomi-llm-prompt`
+   - Naomi: `feat/naomi-telemetry` or `fix/naomi-dashboard-contract`
 
-2. **The Handoff Process (Background Tasks):**
-   - **Raph** is responsible for writing the FastAPI background task that triggers Naomi's code.
-   - **Raph** will call `AMRAnomalyEngine.run_detection_pipeline(record_ids)`.
-   - **Naomi** must ensure that her `run_detection_pipeline` method accepts exactly a list of IDs (`List[int]`) and handles all database queries internally. This is your strict contract.
+2. **Database Changes:**
+   - If Naomi needs a new column in the database (e.g., to expose a new metric for the frontend), she must ping Raph. Raph will update `entities.py` and run the Alembic migration. **Naomi should never edit `entities.py` directly.**
 
-3. **Database Changes:**
-   - If Naomi needs a new column in the database (e.g., to store a new ML metric), she must ping Raph. Raph will update `entities.py` and run the Alembic migration. **Naomi should never edit `entities.py` directly.**
-
-4. **Testing:**
+3. **Testing:**
    - Always run the test suite locally before pushing: `source venv/bin/activate && pytest -v`
    - Do not break the tests in the other person's zone.
