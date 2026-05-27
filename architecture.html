@@ -32,50 +32,57 @@
 <body>
 <h1>AMR-Nexus One Health Backend — Rev 2 Architecture</h1>
 <blockquote>
-<p><strong>Mission</strong>: A production-ready surveillance platform for Antimicrobial Resistance (AMR) in Kenya, aligned with WHO GLASS, HL7 FHIR, and WOAH standards. Transitioned from a simple data ingestion pipe into a dynamically contextualized Decision-Support, Adaptive Intelligence, and Early Warning platform.</p>
+<p><strong>Mission</strong>: A production-ready surveillance platform for Antimicrobial Resistance (AMR) in Kenya, aligned with WHO GLASS, HL7 FHIR, and WOAH standards. This backend repository serves strictly as the Data Backbone and API Gateway.</p>
 </blockquote>
 <hr />
 <h2>1. Core Architecture (July 14, 2026 Revision 2)</h2>
-<p>The system is consolidated into 3 High-Performance Tightly Integrated Components:</p>
+<p>The system is strictly divided into the internal API gateway (this repository) and external ML microservices (owned by the Data Science team).</p>
 
-<h3>Component A: Data Backbone (The Foundation)</h3>
+<h3>Component A: Data Backbone (This Repository)</h3>
 <ul>
-  <li><strong>Role:</strong> Robust, "real-data ready" schema focused on Human + Poultry data unification.</li>
+  <li><strong>Role:</strong> Robust, "real-data ready" schema focused on Human + Poultry data unification. Serves as the central API gateway.</li>
   <li><strong>Data Entities:</strong> <code>AMRRecord</code> (core), <code>Alert</code> (AI triggers), <code>Guidance</code> (LLM advisories), <code>GenomicSignal</code>.</li>
   <li><strong>Ingestion:</strong> <code>POST /api/v1/backbone/ingest/whonet</code> with strict Pydantic validation and data cleaning pipeline (imputing <code>facility_type</code>, <code>sub_county</code>).</li>
+  <li><strong>Dashboard API:</strong> Surfaces high-level telemetry, aggregates, and alerts for the frontend UI.</li>
 </ul>
 
-<h3>Component B: AI Early Warning Engine (The Detector)</h3>
+<h3>Component B & C: ML Engine & LLM Advisory (External Microservices)</h3>
 <ul>
-  <li><strong>Role:</strong> Unsupervised hotspot detection and time-series forecasting.</li>
-  <li><strong>Anomaly Detection:</strong> Uses <code>IsolationForest</code> via <code>AMRAnomalyEngine</code> to score records and generate <code>Alert</code> records (with <code>hotspot_magnitude</code> and <code>anomaly_score</code>).</li>
-  <li><strong>Forecasting:</strong> On-demand Prophet-based projection via <code>GET /api/v1/intelligence/forecasts/{county}</code>.</li>
-  <li><strong>Notification:</strong> Asynchronous SMS delivery via Africa's Talking (<code>NotificationService</code>) upon high-magnitude alerts.</li>
-</ul>
-
-<h3>Component C: Adaptive Intelligence / LLM Advisory (The Advisor)</h3>
-<ul>
-  <li><strong>Role:</strong> Generates actionable, role-gated markdown advisories using Claude 4.5 Sonnet.</li>
-  <li><strong>Generation:</strong> <code>POST /api/v1/intelligence/alerts/{alert_id}/advisory</code> triggers the <code>LLMAdvisoryEngine</code>.</li>
-  <li><strong>Role-Gating:</strong> System prompts differ based on user role (e.g., National Coordinator vs. County Veterinarian), ensuring contextually appropriate clinical and policy guidance.</li>
-  <li><strong>Graceful Degradation:</strong> LLM API failures persist a <code>PENDING</code> guidance record for retry, ensuring no data loss.</li>
+  <li><strong>Role:</strong> Unsupervised hotspot detection, forecasting, and LLM Markdown generation.</li>
+  <li><strong>Decoupling:</strong> The AI/ML team reads from the PostgreSQL/Kafka instances, performs the heavy compute, and writes results (Alerts, Guidance) back into the database.</li>
+  <li><strong>Zero Local ML:</strong> This backend repository does not contain or execute any ML training, inference, or LLM logic.</li>
 </ul>
 
 <hr />
-<h2>2. Layer Architecture (Data Flow)</h2>
-<div class="codehilite"><pre><span></span><code>External Sources                  API Layer               Service Layer              Storage
-─────────────────    HTTP POST    ──────────────   calls  ────────────────  writes  ────────────
- WHONET / DHIS2  ──────────────► backbone.py ──────────► DataCleaner       ──────► PostgreSQL
-                                  (Router)            │   (cleaner.py)             (TimescaleDB)
+<h2>2. Monorepo Structure & Separation of Labor</h2>
+<p>The repository has been restructured into a strict <strong>Monorepo</strong> to support the 16-person team. Strict boundaries prevent overlap between software engineers, data scientists, and frontend developers.</p>
+
+<div class="codehilite"><pre><span></span><code>amr-nexus-monorepo/
+├── backend/            (Owned by Raph & Naomi)
+│   ├── src/            (FastAPI Backbone, Cleaners, DB Models)
+│   └── tests/          (Hermetic Pytest Suite)
+├── database/           (Owned by Backend Team)
+│   └── schema.sql      (PostgreSQL DDL, Migrations)
+├── ml-ai/              (Owned by Gavinta, Jesse, Nicole, Celine)
+│   ├── models/         (IsolationForest binaries, LLM Prompts)
+│   └── pipelines/      (Data generation, ML training)
+└── frontend/           (Owned by Lowell & UI Team)
+    └── dashboard/      (Next.js / React UI)
+</code></pre></div>
+
+<hr />
+<h2>3. Layer Architecture (Data Flow)</h2>
+<div class="codehilite"><pre><span></span><code>External Sources                  API Layer (/backend)    Service Layer             Storage
+─────────────────    HTTP POST    ──────────────   calls  ──────────────  writes  ────────────
+ WHONET / DHIS2  ──────────────► backbone.py ──────────► DataCleaner    ──────► PostgreSQL
+                                  (Router)            │  (cleaner.py)            (TimescaleDB)
                                                       │
-                                                      │   AMRAnomalyEngine
-                                                      └──► (anomaly_detector.py)
-                                                              │
-                                                              ├──► LLMAdvisoryEngine
-                                                              │    (Claude Sonnet 4.5)
-                                                              │
-                                                              └──► NotificationService
-                                                                   (Africa&#39;s Talking)
+                                                      │                             Kafka
+                                                      └──► (Event Stream) ──────► (Message Bus)
+                                                                                         │
+                                                                                         ▼
+                                                                                 ML/AI Services
+                                                                                   (/ml-ai)
 
 Auth Flow:  Client ──POST /token──► auth.py ──► security.py (JWT) ──► Bearer Token
 Protected:  Client ──Bearer───────► security.py (decode) ──► RoleChecker(required_role) ──► Route Handler
@@ -114,14 +121,9 @@ Protected:  Client ──Bearer───────► security.py (decode) ─
       <td>Calculates quality scores, flags critical failures (missing pathogen/drug), and imputes missing non-critical fields.</td>
     </tr>
     <tr>
-      <td><strong>LLM Advisory</strong></td>
-      <td><code>src/services/intelligence/llm_advisory.py</code></td>
-      <td>Compiles context (SHAP, geography, resistance metrics) and queries Anthropic Claude to generate Markdown briefs.</td>
-    </tr>
-    <tr>
-      <td><strong>Forecaster</strong></td>
-      <td><code>src/services/ml_engine/forecaster.py</code></td>
-      <td>Uses Facebook Prophet to forecast resistance trends on a per-county basis.</td>
+      <td><strong>Intelligence API</strong></td>
+      <td><code>src/api/intelligence.py</code></td>
+      <td>Fetches database records and alerts to serve aggregated telemetry directly to the frontend dashboards.</td>
     </tr>
   </tbody>
 </table>
@@ -145,20 +147,18 @@ Protected:  Client ──Bearer───────► security.py (decode) ─
 │  └──────────────────┘    └─────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────┘
 </code></pre></div>
-<p><strong>Note:</strong> Redis has been integrated for task buffering and future caching of LLM advisories and dashboard telemetry.</p>
+<p><strong>Note:</strong> Redis has been integrated for task buffering and future caching of telemetry data.</p>
 
 <hr />
-<h2>5. Test Infrastructure (120/120 Passing)</h2>
+<h2>5. Test Infrastructure (/backend/tests)</h2>
 <p>The hermetic test suite (<code>pytest</code>) ensures pipeline integrity without requiring external services.</p>
 <ul>
-  <li><strong>SQLite In-Memory:</strong> Uses <code>StaticPool</code> to override <code>get_db()</code> dependencies during testing.</li>
-  <li><strong>Mocked External APIs:</strong> <code>anthropic</code>, <code>prophet</code>, and <code>africastalking</code> are mocked at the session level in <code>conftest.py</code>.</li>
+  <li><strong>SQLite In-Memory:</strong> Uses <code>StaticPool</code> and overrides <code>SessionLocal</code> during testing to isolate tests from Postgres.</li>
   <li><strong>Comprehensive Coverage:</strong> 
     <ul>
-      <li><code>test_api.py</code>: Validates Rev 2 schemas and telemetry structure.</li>
+      <li><code>test_api.py</code>: Validates data backbone ingestion and telemetry schemas.</li>
+      <li><code>test_cleaner.py</code>: Verifies data quality scoring and imputation logic.</li>
       <li><code>test_security.py</code>: Multi-role RBAC validation.</li>
-      <li><code>test_llm_advisory.py</code>: Component C context building and graceful error handling.</li>
-      <li><code>test_anomaly_engine.py</code>: Component B detection pipeline validation.</li>
     </ul>
   </li>
 </ul>
