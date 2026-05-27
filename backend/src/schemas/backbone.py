@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from src.models.entities import SectorEnum
@@ -28,7 +28,25 @@ class AMRRecordCreate(BaseModel):
     hl7_fhir_id: Optional[str] = None
     woah_reference: Optional[str] = None
 
+    ncbi_tax_id: Optional[int] = None
+    sequencing_platform: Optional[str] = None
+    assembly_id: Optional[str] = None
+    accession_number: Optional[str] = None
+    qc_status: Optional[str] = None
+
     genomic_signals: List[GenomicSignalCreate] = []
+
+    @field_validator("pathogen_name")
+    @classmethod
+    def normalize_pathogen_name(cls, v: str) -> str:
+        v_lower = v.lower()
+        if "e. coli" in v_lower:
+            return "Escherichia coli"
+        if "s. aureus" in v_lower:
+            return "Staphylococcus aureus"
+        if "k. pneumoniae" in v_lower:
+            return "Klebsiella pneumoniae"
+        return v
 
 
 class AMRRecordResponse(AMRRecordCreate):

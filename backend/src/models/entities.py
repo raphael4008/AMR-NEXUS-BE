@@ -65,6 +65,13 @@ class AMRRecord(Base):
     hl7_fhir_id = Column(String, nullable=True)
     woah_reference = Column(String, nullable=True)
 
+    # ── Genomic Metadata (Module 2 Placeholders) ────────────────────────────────
+    ncbi_tax_id = Column(Integer, index=True, nullable=True)
+    sequencing_platform = Column(String(100), nullable=True)
+    assembly_id = Column(String(100), nullable=True)
+    accession_number = Column(String(100), nullable=True)
+    qc_status = Column(String(50), nullable=True)
+
     # ── Relationships ───────────────────────────────────────────────────────────
     genomic_signals = relationship("GenomicSignal", back_populates="record")
     alerts = relationship("Alert", back_populates="record")
