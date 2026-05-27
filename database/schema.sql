@@ -1,5 +1,6 @@
 -- database/schema.sql
 -- WHO GLASS aligned AMR-Nexus schema for PostgreSQL / TimescaleDB
+-- Includes v1.1 genomic metadata updates and pathogen normalization
 
 CREATE TABLE amr_records (
     id SERIAL PRIMARY KEY,
@@ -16,13 +17,39 @@ CREATE TABLE amr_records (
     data_quality_score NUMERIC(4, 3),
     missing_fields JSONB,
     hl7_fhir_id VARCHAR(100),
-    woah_reference VARCHAR(100)
+    woah_reference VARCHAR(100),
+    ncbi_tax_id INT NULL,
+    sequencing_platform VARCHAR(100) NULL,
+    assembly_id VARCHAR(100) NULL,
+    accession_number VARCHAR(100) NULL,
+    qc_status VARCHAR(50) NULL
 );
 
 -- Indexing for high-performance temporal and geographic queries
 CREATE INDEX idx_amr_records_timestamp ON amr_records(timestamp);
 CREATE INDEX idx_amr_records_pathogen ON amr_records(pathogen_name);
 CREATE INDEX idx_amr_records_county ON amr_records(county);
+CREATE INDEX idx_amr_records_ncbi_tax_id_pathogen_name ON amr_records USING btree(ncbi_tax_id, pathogen_name);
+
+-- Trigger routine to ensure pathogen_name is auto-normalized into standard formats
+CREATE OR REPLACE FUNCTION normalize_pathogen_name()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.pathogen_name ILIKE '%E. coli%' THEN
+        NEW.pathogen_name := 'Escherichia coli';
+    ELSIF NEW.pathogen_name ILIKE '%S. aureus%' THEN
+        NEW.pathogen_name := 'Staphylococcus aureus';
+    ELSIF NEW.pathogen_name ILIKE '%K. pneumoniae%' THEN
+        NEW.pathogen_name := 'Klebsiella pneumoniae';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_normalize_pathogen_name
+BEFORE INSERT OR UPDATE ON amr_records
+FOR EACH ROW
+EXECUTE FUNCTION normalize_pathogen_name();
 
 CREATE TABLE alerts (
     id SERIAL PRIMARY KEY,
