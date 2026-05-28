@@ -11,6 +11,8 @@ from sqlalchemy import (
     JSON,
     String,
     Text,
+    Boolean,
+    Numeric,
 )
 from sqlalchemy.orm import relationship
 
@@ -40,7 +42,7 @@ class AMRRecord(Base):
     __tablename__ = "amr_records"
 
     id = Column(Integer, primary_key=True, index=True)
-    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    sample_collection_date = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
     # ── One Health Dimensions ───────────────────────────────────────────────────
     sector = Column(Enum(SectorEnum), nullable=False, index=True)
@@ -71,6 +73,20 @@ class AMRRecord(Base):
     assembly_id = Column(String(100), nullable=True)
     accession_number = Column(String(100), nullable=True)
     qc_status = Column(String(50), nullable=True)
+
+    # ── Disaggregation Fields ───────────────────────────────────────────────────
+    patient_sex = Column(String(50), nullable=True)
+    patient_age_years = Column(Integer, nullable=True)
+    admission_type = Column(String(100), nullable=True)
+    animal_species = Column(String(100), nullable=True)
+    production_system = Column(String(100), nullable=True)
+
+    # ── GAP-AMR 2026-2036 Compliance & Metadata ────────────────────────────────
+    infarm_compliant = Column(Boolean, default=False, index=True)
+    animuse_compliant = Column(Boolean, default=False, index=True)
+    glass_eligible = Column(Boolean, default=False, index=True)
+    woah_animal_aware_class = Column(String(50), nullable=True)
+    antimicrobial_residue_ppm = Column(Numeric(12, 6), nullable=True)
 
     # ── Relationships ───────────────────────────────────────────────────────────
     genomic_signals = relationship("GenomicSignal", back_populates="record")

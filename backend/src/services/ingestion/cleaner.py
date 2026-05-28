@@ -22,23 +22,30 @@ class DataCleaner:
 
         df = pd.DataFrame(raw_payload)
         
+        if df.empty:
+            return [], []
+            
         # 1. Calculate Data Quality Score (0.0 to 1.0)
         df['data_quality_score'] = 1.0 - df.isnull().mean(axis=1)
 
-        # 2. Track Missing Fields for Provenance
-        df['missing_fields'] = df.apply(
-            lambda row: json.dumps(row.index[row.isnull()].tolist()), axis=1
-        )
+        # 2. Track Missing Fields for Provenance (Vectorized using numpy)
+        null_mask = df.isnull()
+        df['missing_fields'] = [
+            json.dumps(cols) for cols in 
+            [null_mask.columns[mask].tolist() for mask in null_mask.to_numpy()]
+        ]
 
         # 3. Impute non-critical fields
         if 'facility_type' in df.columns:
             df['facility_type'] = df['facility_type'].fillna("Unknown/Not Reported")
             
         if 'sub_county' in df.columns and 'county' in df.columns:
-            # Impute sub_county based on the statistical mode of the respective county
-            df['sub_county'] = df.groupby('county')['sub_county'].transform(
-                lambda x: x.fillna(x.mode()[0] if not x.mode().empty else "Unknown")
+            # Impute sub_county based on the statistical mode of the respective county (Vectorized)
+            county_modes = df.groupby('county')['sub_county'].agg(
+                lambda x: x.mode()[0] if not x.mode().empty else "Unknown"
             )
+            df['sub_county'] = df['sub_county'].fillna(df['county'].map(county_modes))
+            df['sub_county'] = df['sub_county'].fillna("Unknown")
 
         # 4. Isolate critical failures
         for col in self.critical_fields:

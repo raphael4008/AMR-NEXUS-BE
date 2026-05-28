@@ -4,7 +4,7 @@
 
 CREATE TABLE amr_records (
     id SERIAL PRIMARY KEY,
-    timestamp TIMESTAMPTZ NOT NULL,
+    sample_collection_date TIMESTAMPTZ NOT NULL,
     sector VARCHAR(50) NOT NULL,
     pathogen_name VARCHAR(150) NOT NULL,
     antimicrobial_agent VARCHAR(150) NOT NULL,
@@ -22,24 +22,38 @@ CREATE TABLE amr_records (
     sequencing_platform VARCHAR(100) NULL,
     assembly_id VARCHAR(100) NULL,
     accession_number VARCHAR(100) NULL,
-    qc_status VARCHAR(50) NULL
+    qc_status VARCHAR(50) NULL,
+    patient_sex VARCHAR(50) NULL,
+    patient_age_years INT NULL,
+    admission_type VARCHAR(100) NULL,
+    animal_species VARCHAR(100) NULL,
+    production_system VARCHAR(100) NULL,
+    infarm_compliant BOOLEAN DEFAULT FALSE,
+    animuse_compliant BOOLEAN DEFAULT FALSE,
+    glass_eligible BOOLEAN DEFAULT FALSE,
+    woah_animal_aware_class VARCHAR(50) NULL,
+    antimicrobial_residue_ppm NUMERIC(12, 6) NULL
 );
 
+-- Convert to TimescaleDB hypertable
+SELECT create_hypertable('amr_records', 'sample_collection_date');
+
 -- Indexing for high-performance temporal and geographic queries
-CREATE INDEX idx_amr_records_timestamp ON amr_records(timestamp);
+CREATE INDEX idx_geo_pathogen_time ON amr_records (county, pathogen_name, sample_collection_date DESC);
 CREATE INDEX idx_amr_records_pathogen ON amr_records(pathogen_name);
 CREATE INDEX idx_amr_records_county ON amr_records(county);
 CREATE INDEX idx_amr_records_ncbi_tax_id_pathogen_name ON amr_records USING btree(ncbi_tax_id, pathogen_name);
+CREATE INDEX idx_amr_records_compliance ON amr_records USING btree(infarm_compliant, animuse_compliant, glass_eligible);
 
 -- Trigger routine to ensure pathogen_name is auto-normalized into standard formats
-CREATE OR REPLACE FUNCTION normalize_pathogen_name()
+CREATE OR REPLACE FUNCTION tg_normalize_pathogen_name()
 RETURNS TRIGGER AS $$
 BEGIN
-    IF NEW.pathogen_name ILIKE '%E. coli%' THEN
+    IF NEW.pathogen_name ILIKE '%E. coli%' OR NEW.pathogen_name ILIKE '%E coli%' THEN
         NEW.pathogen_name := 'Escherichia coli';
-    ELSIF NEW.pathogen_name ILIKE '%S. aureus%' THEN
+    ELSIF NEW.pathogen_name ILIKE '%S. aureus%' OR NEW.pathogen_name ILIKE '%S aureus%' THEN
         NEW.pathogen_name := 'Staphylococcus aureus';
-    ELSIF NEW.pathogen_name ILIKE '%K. pneumoniae%' THEN
+    ELSIF NEW.pathogen_name ILIKE '%K. pneumoniae%' OR NEW.pathogen_name ILIKE '%K pneumoniae%' THEN
         NEW.pathogen_name := 'Klebsiella pneumoniae';
     END IF;
     RETURN NEW;
@@ -49,7 +63,7 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_normalize_pathogen_name
 BEFORE INSERT OR UPDATE ON amr_records
 FOR EACH ROW
-EXECUTE FUNCTION normalize_pathogen_name();
+EXECUTE FUNCTION tg_normalize_pathogen_name();
 
 CREATE TABLE alerts (
     id SERIAL PRIMARY KEY,
