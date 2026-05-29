@@ -18,7 +18,7 @@ import pytest
 from datetime import datetime
 from pydantic import ValidationError
 
-from src.models.entities import SectorEnum, AMRRecord, GenomicSignal, Alert, Guidance, GuidanceStatusEnum
+from src.models.entities import SectorEnum, AMRRecord, GenomicSignal, Alert, GuidanceBrief, GuidanceStatusEnum
 from src.schemas.backbone import AMRRecordCreate, AMRRecordResponse
 
 
@@ -92,7 +92,7 @@ class TestGenomicSignalModel:
 class TestAlertModel:
     def test_rev2_fields_exist(self):
         """Rev 2 Alert schema: anomaly_score, hotspot_magnitude, feature_importance."""
-        alert = Alert(amr_record_id=1, anomaly_score=-0.3, hotspot_magnitude=0.75)
+        alert = Alert(record_id=1, anomaly_score=-0.3, hotspot_magnitude=0.75)
         assert alert.anomaly_score == -0.3
         assert alert.hotspot_magnitude == 0.75
         assert alert.feature_importance is None  # optional
@@ -103,19 +103,19 @@ class TestAlertModel:
 
 class TestGuidanceModel:
     def test_tablename_is_guidance(self):
-        assert Guidance.__tablename__ == "guidance"
+        assert GuidanceBrief.__tablename__ == "guidance"
 
     def test_has_expected_fields(self):
-        g = Guidance(alert_id=1, role_target="National Coordinator", content_markdown="Test")
+        g = GuidanceBrief(alert_id=1, role_target="National Coordinator", guidance_markdown="Test")
         assert g.role_target == "National Coordinator"
-        assert g.content_markdown == "Test"
+        assert g.guidance_markdown == "Test"
 
     def test_status_enum_has_pending(self):
-        g = Guidance(status="PENDING")
+        g = GuidanceBrief(status="PENDING")
         assert g.status == "PENDING"
 
     def test_status_enum_has_approved(self):
-        g = Guidance(status="APPROVED")
+        g = GuidanceBrief(status="APPROVED")
         assert g.status == "APPROVED"
 
 

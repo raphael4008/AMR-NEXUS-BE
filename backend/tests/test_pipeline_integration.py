@@ -46,7 +46,7 @@ def test_complete_end_to_end_backend_processing_flow(
             "sector": "ANIMAL",
             "pathogen_name": "E. coli",  # Shorthand string to trigger Raph's normalization logic
             "antimicrobial_agent": "Ciprofloxacin",
-            "county": "Kiambu",
+            "county": "IntegrationCounty",
             "sub_county": None,          # Triggers sub-county modal group imputation
             "facility_type": "Poultry Farm",
             "result_value": "R",         # High resistance flag to trigger Naomi's AI anomaly engine
@@ -82,7 +82,7 @@ def test_complete_end_to_end_backend_processing_flow(
     assert response.json()["failed_critical"] == 0
 
     # 4. Verify data cleaning and string normalization rules executed smoothly
-    saved_record = db_session.query(AMRRecord).filter(AMRRecord.county == "Kiambu").first()
+    saved_record = db_session.query(AMRRecord).filter(AMRRecord.county == "IntegrationCounty").first()
     assert saved_record is not None
     assert saved_record.pathogen_name == "Escherichia coli"
     assert saved_record.data_quality_score > 0.80

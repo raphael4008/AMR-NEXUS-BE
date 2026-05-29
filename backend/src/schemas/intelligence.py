@@ -5,8 +5,8 @@ from datetime import datetime
 
 class GeoCentroidLocation(BaseModel):
     county: str = Field(..., examples=["Nairobi", "Kiambu", "Machakos"])
-    latitude: float = Field(..., geo_upper_bound=90.0, geo_lower_bound=-90.0)
-    longitude: float = Field(..., geo_upper_bound=180.0, geo_lower_bound=-180.0)
+    latitude: float = Field(..., json_schema_extra={"geo_upper_bound": 90.0, "geo_lower_bound": -90.0})
+    longitude: float = Field(..., json_schema_extra={"geo_upper_bound": 180.0, "geo_lower_bound": -180.0})
 
 class AnomalyMetricSummary(BaseModel):
     record_id: str

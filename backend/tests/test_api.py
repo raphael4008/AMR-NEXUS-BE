@@ -136,8 +136,10 @@ class TestIntelligenceEndpoint:
         token = client.post("/api/v1/token", data={"username": "national_admin", "password": "admin123"}).json()["access_token"]
         resp = client.get("/api/v1/intelligence/dashboard/summary", headers={"Authorization": f"Bearer {token}"})
         data = resp.json()
-        assert "total_alerts" in data
-        assert "alerts_last_30_days" in data
+        assert "total_isolates_scanned" in data
+        assert "active_hotspots_detected" in data
+        assert "national_compliance_index" in data
+        assert "recent_anomalies" in data
 
 
 # ── OpenAPI Schema ────────────────────────────────────────────────────────────

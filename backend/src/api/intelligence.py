@@ -28,7 +28,7 @@ async def get_dashboard_telemetry(
     compliance_index = (clean_count / total_scanned) if total_scanned > 0 else 1.0
 
     # Fetch recent anomalies containing new genomic/surveillance markers
-    recent_alerts = db.query(Alert).order_by(Alert.timestamp.desc()).limit(10).all()
+    recent_alerts = db.query(Alert).order_by(Alert.detection_timestamp.desc()).limit(10).all()
     anomalies_output = []
     
     for alert in recent_alerts:

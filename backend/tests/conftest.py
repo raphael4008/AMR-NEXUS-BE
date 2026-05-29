@@ -247,7 +247,7 @@ def sample_alert(db_session, sample_amr_record):
     """A persisted Alert linked to sample_amr_record."""
     from src.models.entities import Alert
     alert = Alert(
-        amr_record_id=sample_amr_record.id,
+        record_id=sample_amr_record.id,
         anomaly_score=-0.3145,
         hotspot_magnitude=0.75,
         feature_importance={
@@ -266,11 +266,11 @@ def sample_alert(db_session, sample_amr_record):
 @pytest.fixture
 def sample_guidance(db_session, sample_alert):
     """A persisted Guidance linked to sample_alert (National Coordinator role)."""
-    from src.models.entities import Guidance
-    guidance = Guidance(
+    from src.models.entities import GuidanceBrief
+    guidance = GuidanceBrief(
         alert_id=sample_alert.id,
         role_target="National Coordinator",
-        content_markdown="## 🚨 Resistance Signal Summary\nTest advisory brief generated in test fixture.",
+        guidance_markdown="## 🚨 Resistance Signal Summary\nTest advisory brief generated in test fixture.",
         status="PENDING",
     )
     db_session.add(guidance)
