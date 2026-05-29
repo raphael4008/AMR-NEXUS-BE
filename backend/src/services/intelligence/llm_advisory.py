@@ -1,57 +1,49 @@
-import logging
+# Track: backend/feature-api-name
+import anthropic
 from sqlalchemy.orm import Session
-from src.models.entities import Alert, Guidance
-
-logger = logging.getLogger(__name__)
+from src.models.entities import Alert, AMRRecord, GuidanceBrief
 
 class LLMAdvisoryEngine:
-    def __init__(self, anthropic_client=None):
-        self.client = anthropic_client
+    def __init__(self, api_key: str):
+        self.client = anthropic.Anthropic(api_key=api_key)
 
-    def _get_role_context(self, role: str) -> str:
-        """Maps distinct system contexts based on the user's role target."""
-        if role == "National Coordinator":
-            return (
-                "You are an AMR Policy Advisor following Kenya's National AMR Action Plan. "
-                "Analyze the anomaly metrics and provide macro-level strategic guidance, "
-                "policy modification recommendations, and resource allocation plans. "
-                "Output strictly in Markdown, aligning with WHO AWaRe classification."
-            )
-        elif role == "County Veterinarian":
-            return (
-                "You are an AMR Clinical Advisor. Analyze the anomaly metrics and provide "
-                "localized clinical summaries and direct SOP action checklists for poultry "
-                "farmers. Output strictly in Markdown."
-            )
-        return "You are an AMR Advisor. Provide a standard briefing in Markdown."
-
-    def _invoke_claude_stub(self, prompt: str, system: str) -> str:
-        # Replaces raw anthropic.messages.create() logic for the MVP
-        return f"### AMR Response Advisory\n\n**System Focus:** {system[:40]}...\n\n- Evaluate intervention protocols immediately."
-
-    def trigger_role_guidance(self, alert_id: int, db_session: Session) -> None:
-        """
-        Extracts risk metrics and dynamically routes system prompts to the LLM.
-        """
+    def trigger_role_guidance(self, alert_id: int, db_session: Session):
         alert = db_session.query(Alert).filter(Alert.id == alert_id).first()
         if not alert:
-            logger.error(f"Alert {alert_id} not found.")
+            return
+            
+        record = db_session.query(AMRRecord).filter(AMRRecord.id == alert.record_id).first()
+        if not record:
             return
 
-        roles = ["National Coordinator", "County Veterinarian"]
+        roles_to_generate = ["National Coordinator", "County Veterinarian"]
         
-        for role in roles:
-            system_prompt = self._get_role_context(role)
-            prompt_content = f"Analyze anomaly with magnitude {alert.hotspot_magnitude} for Alert #{alert.id}."
+        for role in roles_to_generate:
+            if role == "National Coordinator":
+                system_prompt = "You are advising a National Coordinator. Frame outputs strictly around national threshold analysis, resource reallocation vectors, and policy modifications."
+            elif role == "County Veterinarian":
+                system_prompt = "You are advising a County Veterinarian. Frame outputs around sub-county poultry empiric prescribing modifications, WHO AWaRe drug classifications, and clinical SOP checklists."
             
-            content_markdown = self._invoke_claude_stub(prompt=prompt_content, system=system_prompt)
-
-            guidance = Guidance(
-                alert_id=alert.id,
-                role_target=role,
-                content_markdown=content_markdown,
-                status="COMPLETED"
-            )
-            db_session.add(guidance)
-        
-        db_session.commit()
+            prompt = f"Alert for {record.pathogen_name} resistant to {record.antimicrobial_agent} in {record.county} County."
+            
+            try:
+                response = self.client.messages.create(
+                    model="claude-3-haiku-20240307",
+                    max_tokens=1000,
+                    system=system_prompt,
+                    messages=[
+                        {"role": "user", "content": prompt}
+                    ]
+                )
+                guidance_markdown = response.content[0].text
+                
+                # Save into guidance_briefs table
+                new_brief = GuidanceBrief(
+                    alert_id=alert.id,
+                    user_role=role,
+                    guidance_markdown=guidance_markdown
+                )
+                db_session.add(new_brief)
+                db_session.commit()
+            except Exception as e:
+                print(f"LLM API Error for role {role}: {e}")
