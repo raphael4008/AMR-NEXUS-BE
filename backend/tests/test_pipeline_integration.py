@@ -1,4 +1,4 @@
-# Track Branch Naming Rule: backend/feature-api-name
+# Monorepo Branch Track: backend/feature-api-name
 import pytest
 from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
@@ -6,105 +6,100 @@ from sqlalchemy.orm import Session
 
 from src.main import app
 from src.models.base import get_db
-from src.models.entities import AMRRecord, Alert, GuidanceBrief, sector_enum
-from src.services.ingestion.cleaner import DataCleaner
-from src.services.ml_engine.anomaly_detector import AMRAnomalyEngine
+from src.models.entities import AMRRecord, Alert, GuidanceBrief
 
 client = TestClient(app)
 
 @pytest.fixture
-def mock_anthropic_client():
-    """Mocks the external Claude API response layer to prevent runtime network outbound lags."""
-    with patch("src.services.intelligence.llm_advisory.anthropic.Anthropic") as mock_class:
+def mock_claud_client():
+    """Mocks out external Claude API response loops to protect the testing environment from network lag."""
+    with patch("src.services.intelligence.llm_advisory.anthropic.Anthropic") as mock_anthropic:
         mock_instance = MagicMock()
-        mock_message_output = MagicMock()
-        mock_message_output.content = [MagicMock(text="### WHO AWaRe Veterinary Stewardship Guideline Brief\n1. Modify Prescribing Patterns.")]
-        mock_instance.messages.create.return_model = mock_message_output
-        mock_class.return_value = mock_instance
+        mock_msg_output = MagicMock()
+        mock_msg_output.content = [MagicMock(text="### WHO AWaRe Stewardship Brief\n1. Enforce alternative prescribing patterns.")]
+        mock_instance.messages.create.return_value = mock_msg_output
+        mock_anthropic.return_value = mock_instance
         yield mock_instance
 
 @pytest.fixture
 def mock_sms_gateway():
-    """Mocks Africa's Talking gateway endpoint interactions."""
+    """Mocks the Africa's Talking SMS network engine layer."""
     with patch("src.services.notifications.sms_service.africastalking") as mock_at:
         mock_sms_instance = MagicMock()
-        mock_sms_instance.send.return_value = {"SMSMessageData": {"Message": "Sent Successfully"}}
+        mock_sms_instance.send.return_value = {"SMSMessageData": {"Message": "Dispatched successfully to Sandbox"}}
         mock_at.SMS.return_value = mock_sms_instance
         yield mock_sms_instance
 
-def test_end_to_end_ingestion_to_ai_alert_pipeline(
+def test_complete_end_to_end_backend_processing_flow(
     db_session: Session, 
-    mock_anthropic_client, 
+    mock_claud_client, 
     mock_sms_gateway
 ):
     """
-    Executes an Integration Test verifying Component A, B, and C connectivity.
-    Validates: Raw Input -> Ingestion -> Cleaning -> Anomaly Flagging -> LLM Generation -> SMS Trigger.
+    Executes a complete Integration Test across Component A, B, and C.
+    Validates: Raw Data Upload -> Cleaning -> Storage -> Anomaly Scoring -> LLM Briefing -> SMS Notification.
     """
-    # 1. Simulate an incoming dirty data payload from Nicole's synthetic pipeline structure
-    raw_synthetic_payload = [
+    # 1. Mock incoming synthetic lab payload matching Nicole's data model criteria
+    raw_incoming_payload = [
         {
             "sector": "ANIMAL",
             "pathogen_name": "E. coli",  # Shorthand string to trigger Raph's normalization logic
             "antimicrobial_agent": "Ciprofloxacin",
             "county": "Kiambu",
-            "sub_county": None,          # Triggers sub-county modal imputation
+            "sub_county": None,          # Triggers sub-county modal group imputation
             "facility_type": "Poultry Farm",
-            "result_value": "R",         # High resistance target to trigger Naomi's AI anomaly engine
+            "result_value": "R",         # High resistance flag to trigger Naomi's AI anomaly engine
             "ncbi_tax_id": 562,
-            "sequencing_platform": "Illumina Nanopore",
+            "sequencing_platform": "Illumina",
             "is_synthetic": 1
         }
     ]
 
-    # 2. Overide FastAPI dependency injection engine to utilize our test database session
+    # 2. Bind FastAPI's dependency injection to our isolated test database session
     app.dependency_overrides[get_db] = lambda: db_session
 
-    # 3. Submit request to Raph's primary data backbone entrypoint router
-    response = client.post("/api/v1/backbone/ingest/whonet", json=raw_synthetic_payload)
+    # 3. Post data payload to Raph's ingestion route gateway
+    response = client.post("/api/v1/backbone/ingest/whonet", json=raw_incoming_payload)
     
-    # Assert successful background queue handoff
+    # Assert successful async handoff status code
     assert response.status_code == 202
     assert response.json()["processed_records"] == 1
     assert response.json()["critical_failures"] == 0
 
-    # 4. Force manual execution of the background task synchronously to evaluate state engines
-    inserted_record = db_session.query(AMRRecord).filter(AMRRecord.county == "Kiambu").first()
-    assert inserted_record is not None
-    
-    # Verify string normalization and sub-county imputation performed correctly
-    assert inserted_record.pathogen_name == "Escherichia coli"
-    assert inserted_record.data_quality_score > 0.80
+    # 4. Verify data cleaning and string normalization rules executed smoothly
+    saved_record = db_session.query(AMRRecord).filter(AMRRecord.county == "Kiambu").first()
+    assert saved_record is not None
+    assert saved_record.pathogen_name == "Escherichia coli"
+    assert saved_record.data_quality_score > 0.80
 
-    # 5. Invoke Naomi's downstream AI Engine task processor directly using our transaction session
+    # 5. Invoke Naomi's downstream AI pipeline worker synchronously for testing evaluation
     ai_engine = AMRAnomalyEngine()
-    bg_tasks_mock = MagicMock()
+    mock_bg_tasks = MagicMock()
     
-    # Execute analysis pipeline 
-    db_session.refresh(inserted_record)
+    db_session.refresh(saved_record)
     ai_engine.execute_analysis_pipeline(
-        record_ids=[inserted_record.id], 
+        record_ids=[saved_record.id], 
         db_session=db_session, 
-        bg_tasks=bg_tasks_mock
+        bg_tasks=mock_bg_tasks
     )
 
-    # 6. Verify Anomaly engine successfully flagged record and saved an Alert tracking log
-    generated_alert = db_session.query(Alert).filter(Alert.record_id == inserted_record.id).first()
-    assert generated_alert is not None
-    assert generated_alert.status == "PENDING"
+    # 6. Assert that the record was correctly flagged and committed as a system alert
+    triggered_alert = db_session.query(Alert).filter(Alert.record_id == saved_record.id).first()
+    assert triggered_alert is not None
+    assert triggered_alert.status == "PENDING"
 
-    # 7. Execute the combined Claude Advisory & SMS generation task sub-routine synchronously
-    db_session.refresh(generated_alert)
-    ai_engine._process_advisory_and_sms(alert_id=generated_alert.id, db_session=db_session)
+    # 7. Execute the combined Claude Advisory & SMS generation task synchronously
+    db_session.refresh(triggered_alert)
+    ai_engine._process_advisory_and_sms(alert_id=triggered_alert.id, db_session=db_session)
 
-    # 8. Final Assertions: Ensure database states have transformed end-to-end smoothly
-    db_session.refresh(generated_alert)
-    assert generated_alert.status == "NOTIFIED"
+    # 8. Assert that the database transaction completed end-to-end smoothly
+    db_session.refresh(triggered_alert)
+    assert triggered_alert.status == "NOTIFIED"
 
-    # Check if Claude's role-scoped advisory markdown was successfully saved to the database
-    saved_brief = db_session.query(GuidanceBrief).filter(GuidanceBrief.alert_id == generated_alert.id).first()
+    # Confirm Claude's role-scoped advisory markdown was successfully saved to the database
+    saved_brief = db_session.query(GuidanceBrief).filter(GuidanceBrief.alert_id == triggered_alert.id).first()
     assert saved_brief is not None
     assert "WHO AWaRe" in saved_brief.guidance_markdown
 
-    # Cleanup dependency overrides
+    # Clear dependency overrides to prevent test contamination
     app.dependency_overrides.clear()
