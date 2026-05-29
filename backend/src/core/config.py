@@ -29,6 +29,10 @@ class Settings(BaseSettings):
             f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
 
+    DB_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_PRE_PING: bool = True
+
     # ── Cache ───────────────────────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379"
 

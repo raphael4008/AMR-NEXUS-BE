@@ -133,6 +133,9 @@ def valid_payload():
             "county": "Nairobi",
             "result_value": "Resistant",
             "facility_type": "Tertiary Hospital",
+            "patient_sex": "Female",
+            "patient_age_years": 42,
+            "admission_type": "Inpatient",
         },
         {
             "sector": "animal",
@@ -141,6 +144,8 @@ def valid_payload():
             "county": "Kiambu",
             "result_value": "Sensitive",
             "facility_type": "Poultry Farm",
+            "animal_species": "Chicken",
+            "production_system": "Commercial",
         },
         {
             "sector": "environment",
@@ -157,6 +162,9 @@ def valid_payload():
             "county": "Kisumu",
             "result_value": "Intermediate",
             "facility_type": "Clinic",
+            "patient_sex": "Male",
+            "patient_age_years": 12,
+            "admission_type": "Outpatient",
         },
     ]
 
@@ -172,6 +180,9 @@ def dirty_payload():
             "county": "Nairobi",
             "result_value": "Resistant",
             "facility_type": "Hospital",
+            "patient_sex": "Female",
+            "patient_age_years": 42,
+            "admission_type": "Inpatient",
         },
         {
             # CRITICAL FAILURE — pathogen_name is None
@@ -181,6 +192,8 @@ def dirty_payload():
             "county": "Kiambu",
             "result_value": "Sensitive",
             "facility_type": None,   # non-critical missing
+            "animal_species": "Chicken",
+            "production_system": "Commercial",
         },
         {
             "sector": "environment",
@@ -197,6 +210,9 @@ def dirty_payload():
             "county": "Kisumu",
             "result_value": "Intermediate",
             "facility_type": "Clinic",
+            "patient_sex": "Male",
+            "patient_age_years": 12,
+            "admission_type": "Outpatient",
         },
     ]
 
@@ -215,6 +231,9 @@ def sample_amr_record(db_session):
         sub_county="Westlands",
         facility_type="Tertiary Hospital",
         result_value="Resistant",
+        patient_sex="Female",
+        patient_age_years=42,
+        admission_type="Inpatient",
         data_quality_score=0.95,
         is_synthetic=1,
     )

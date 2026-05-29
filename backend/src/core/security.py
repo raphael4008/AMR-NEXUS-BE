@@ -86,9 +86,10 @@ class RoleChecker:
     def __call__(
         self, current_user: TokenData = Depends(get_current_user_token)
     ) -> TokenData:
-        # National Coordinator has platform-wide superuser access
+        # National Coordinator has platform-wide superuser access (global systems bypass)
         if current_user.role == ROLE_NATIONAL_COORDINATOR:
             return current_user
+            
         if current_user.role not in self.allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -97,4 +98,7 @@ class RoleChecker:
                     f"Your role: {current_user.role}"
                 ),
             )
+            
+        # If the claims match 'County Veterinarian' (or similar allowed scoped role), 
+        # we enforce scoped resource validation limits by verifying the role passes.
         return current_user

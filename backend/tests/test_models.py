@@ -129,16 +129,26 @@ class TestAMRRecordCreateSchema:
             "antimicrobial_agent": "Ciprofloxacin",
             "county": "Nairobi",
             "result_value": "Resistant",
+            "patient_sex": "Male",
+            "patient_age_years": 35,
+            "admission_type": "Inpatient",
         }
         data.update(overrides)
         return data
 
     def test_valid_schema_instantiates(self):
         obj = AMRRecordCreate(**self._valid_data())
-        assert obj.pathogen_name == "E. coli"
+        assert obj.pathogen_name == "Escherichia coli"
 
     def test_sector_converted_to_enum(self):
-        obj = AMRRecordCreate(**self._valid_data(sector="animal"))
+        obj = AMRRecordCreate(**self._valid_data(
+            sector="animal",
+            patient_sex=None,
+            patient_age_years=None,
+            admission_type=None,
+            animal_species="Cattle",
+            production_system="Commercial"
+        ))
         assert obj.sector == SectorEnum.ANIMAL
 
     def test_invalid_sector_raises_validation_error(self):
@@ -183,8 +193,8 @@ class TestAMRRecordResponseSchema:
     def test_response_has_id_field(self):
         assert "id" in AMRRecordResponse.model_fields
 
-    def test_response_has_timestamp_field(self):
-        assert "timestamp" in AMRRecordResponse.model_fields
+    def test_response_has_sample_collection_date_field(self):
+        assert "sample_collection_date" in AMRRecordResponse.model_fields
 
     def test_response_has_data_quality_score_field(self):
         assert "data_quality_score" in AMRRecordResponse.model_fields
