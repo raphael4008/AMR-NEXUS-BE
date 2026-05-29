@@ -25,12 +25,14 @@ def run_downstream_evaluations(record_ids: List[int]):
     """
     db: Session = next(get_db())
     try:
+        from fastapi import BackgroundTasks
+        bg_tasks = BackgroundTasks()
         # 1. Handoff to ML Model (Gavinta/Jesse's Domain)
-        alert_ids = anomaly_engine.execute_analysis_pipeline(record_ids, db)
+        anomaly_engine.execute_analysis_pipeline(record_ids, db, bg_tasks)
         
-        # 2. Handoff to LLM engine for newly generated anomalies
-        for alert_id in alert_ids:
-            advisory_engine.trigger_role_guidance(alert_id, db)
+        # 2. Execute any downstream tasks (LLM engine, SMS)
+        for task in bg_tasks.tasks:
+            task.func(*task.args, **task.kwargs)
     finally:
         db.close()
 

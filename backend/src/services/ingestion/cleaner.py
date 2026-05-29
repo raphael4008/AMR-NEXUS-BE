@@ -47,6 +47,10 @@ class DataCleaner:
             df['sub_county'] = df['sub_county'].fillna(df['county'].map(county_modes))
             df['sub_county'] = df['sub_county'].fillna("Unknown")
 
+        # String Normalization for Pathogens
+        if 'pathogen_name' in df.columns:
+            df['pathogen_name'] = df['pathogen_name'].replace({"E. coli": "Escherichia coli"})
+
         # 4. Isolate critical failures
         for col in self.critical_fields:
             if col not in df.columns:

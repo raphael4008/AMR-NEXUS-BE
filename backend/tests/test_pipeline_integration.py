@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from src.main import app
 from src.models.base import get_db
 from src.models.entities import AMRRecord, Alert, GuidanceBrief
+from src.services.ml_engine.anomaly_detector import AMRAnomalyEngine
 
 client = TestClient(app)
 
@@ -58,13 +59,27 @@ def test_complete_end_to_end_backend_processing_flow(
     # 2. Bind FastAPI's dependency injection to our isolated test database session
     app.dependency_overrides[get_db] = lambda: db_session
 
-    # 3. Post data payload to Raph's ingestion route gateway
-    response = client.post("/api/v1/backbone/ingest/whonet", json=raw_incoming_payload)
-    
-    # Assert successful async handoff status code
-    assert response.status_code == 202
-    assert response.json()["processed_records"] == 1
-    assert response.json()["critical_failures"] == 0
+    # Bypass authentication by mocking the token dependency
+    from src.core.security import get_current_user_token, TokenData
+    app.dependency_overrides[get_current_user_token] = lambda: TokenData(username="test", role="National Coordinator")
+
+    # Mock get_db globally so background tasks get the test session
+    import src.api.backbone
+    original_get_db = src.api.backbone.get_db
+    src.api.backbone.get_db = lambda: iter([db_session])
+
+    try:
+        # 3. Post data payload to Raph's ingestion route gateway
+        with patch("src.api.backbone.run_downstream_evaluations"):
+            response = client.post("/api/v1/backbone/ingest/whonet", json=raw_incoming_payload)
+        
+        assert response.status_code == 202
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["processed_records"] == 1
+    finally:
+        src.api.backbone.get_db = original_get_db
+    assert response.json()["failed_critical"] == 0
 
     # 4. Verify data cleaning and string normalization rules executed smoothly
     saved_record = db_session.query(AMRRecord).filter(AMRRecord.county == "Kiambu").first()

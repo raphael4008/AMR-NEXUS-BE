@@ -25,7 +25,7 @@ class AMRAnomalyEngine:
             })
         return pd.DataFrame(data_matrix)
 
-    async def execute_analysis_pipeline(self, record_ids: List[int], db_session: Session, bg_tasks: BackgroundTasks):
+    def execute_analysis_pipeline(self, record_ids: List[int], db_session: Session, bg_tasks: BackgroundTasks):
         """
         Downstream asynchronous worker target.Processes records safely 
         containing the new genomic markers, creates alerts, and chains downstream actions.
@@ -56,7 +56,7 @@ class AMRAnomalyEngine:
                 # 2. Chain Component C LLM Generation and Last-Mile SMS into Background Worker Loops
                 bg_tasks.add_task(self._process_advisory_and_sms, new_alert.id, db_session)
 
-    async def _process_advisory_and_sms(self, alert_id: int, db_session: Session):
+    def _process_advisory_and_sms(self, alert_id: int, db_session: Session):
         """Helper to process LLM Generation and outbound messaging without slowing down the server thread."""
         try:
             # Generate adaptive, role-scoped markdown briefs
@@ -67,7 +67,8 @@ class AMRAnomalyEngine:
             alert = db_session.query(Alert).filter(Alert.id == alert_id).first()
             record = db_session.query(AMRRecord).filter(AMRRecord.id == alert.record_id).first()
             
-            if record and record.sector == "ANIMAL":
+            from src.models.entities import SectorEnum
+            if record and record.sector == SectorEnum.ANIMAL:
                 sms_gateway = NotificationService()
                 sms_message = f"AMR-Nexus Alert: High resistance for {record.pathogen_name} detected in {record.county} County poultry facilities. Review National Guidelines."
                 # Target mock configuration number for the Kiambu vet profile

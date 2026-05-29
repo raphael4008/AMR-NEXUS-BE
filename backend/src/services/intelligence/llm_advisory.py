@@ -3,9 +3,12 @@ import anthropic
 from sqlalchemy.orm import Session
 from src.models.entities import Alert, AMRRecord, GuidanceBrief
 
+from src.core.config import settings
+
 class LLMAdvisoryEngine:
-    def __init__(self, api_key: str):
-        self.client = anthropic.Anthropic(api_key=api_key)
+    def __init__(self, api_key: str = None):
+        self.api_key = api_key or getattr(settings, "ANTHROPIC_API_KEY", "stub_key")
+        self.client = anthropic.Anthropic(api_key=self.api_key)
 
     def trigger_role_guidance(self, alert_id: int, db_session: Session):
         alert = db_session.query(Alert).filter(Alert.id == alert_id).first()
@@ -40,7 +43,7 @@ class LLMAdvisoryEngine:
                 # Save into guidance_briefs table
                 new_brief = GuidanceBrief(
                     alert_id=alert.id,
-                    user_role=role,
+                    role_target=role,
                     guidance_markdown=guidance_markdown
                 )
                 db_session.add(new_brief)
