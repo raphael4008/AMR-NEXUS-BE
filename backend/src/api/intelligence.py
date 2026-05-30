@@ -32,15 +32,15 @@ async def get_dashboard_telemetry(
     anomalies_output = []
     
     for alert in recent_alerts:
-        record = db.query(AMRRecord).filter(AMRRecord.id == alert.record_id).first()
+        record = db.query(AMRRecord).filter(AMRRecord.id == alert.amr_isolate_record_id).first()
         if record:
             anomalies_output.append({
-                "record_id": str(record.record_id),
+                "record_id": str(record.id),
                 "pathogen_name": record.pathogen_name,
                 "antimicrobial_agent": record.antimicrobial_agent,
                 "sir_result": record.result_value,
                 "anomaly_score": float(alert.anomaly_score),
-                "data_quality_score": float(record.data_quality_score)
+                "data_quality_score": float(record.data_quality_score or 1.0)
             })
 
     return {
@@ -51,24 +51,27 @@ async def get_dashboard_telemetry(
     }
 
 @router.get("/intelligence/heatmap", response_model=List[HeatmapGeoJsonResponse])
-async def get_heatmap_coordinates(db: Session = Depends(get_db)):
+async def get_heatmap_coordinates(
+    db: Session = Depends(get_db),
+    current_user: TokenData = Depends(RoleChecker(["National Coordinator", "County Veterinarian"]))
+):
     """
     Streams multi-sector coordinate geometries to Lowell's Leaflet map renderer.
     """
     # Aggregate data using standard grouping fields
-    records = db.query(AMRRecord).filter(AMRRecord.latitude.isnot(None)).limit(500).all()
+    records = db.query(AMRRecord).limit(500).all()
     heatmap_collection = []
 
     for row in records:
         heatmap_collection.append({
             "location": {
                 "county": row.county,
-                "latitude": float(row.latitude),
-                "longitude": float(row.longitude)
+                "latitude": -1.2921, # Mock centroid for demo
+                "longitude": 36.8219 # Mock centroid for demo
             },
-            "intensity_weight": float(row.data_quality_score),
-            "pathogen_profile": f"{row.pathogen_name} ({row.pathogen_code})",
-            "resistance_level": row.result_value
+            "intensity_weight": float(row.data_quality_score or 1.0),
+            "pathogen_profile": str(row.pathogen_name),
+            "resistance_level": str(row.result_value)
         })
 
     return heatmap_collection

@@ -11,7 +11,7 @@ class NotificationService:
         africastalking.initialize(username, api_key)
         self.sms = africastalking.SMS
 
-    def dispatch_stewardship_trigger(self, phone: str, message: str):
+    async def dispatch_stewardship_trigger(self, phone: str, message: str):
         try:
             # Send the SMS
             response = self.sms.send(message, [phone])

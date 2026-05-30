@@ -1,3 +1,4 @@
+import uuid
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -12,40 +13,40 @@ class GenomicSignalCreate(BaseModel):
 
 
 class AMRRecordCreate(BaseModel):
-    sector: SectorEnum = Field(..., description="human, animal, or environment")
-    pathogen_name: str = Field(..., description="Priority pathogen name e.g., MDR E. coli")
-    antimicrobial_agent: str = Field(..., description="Antimicrobial agent tested")
+    sector: SectorEnum = Field(..., description="HUMAN, ANIMAL, or ENVIRONMENT")
+    pathogen_name: str = Field(..., max_length=100, description="Priority pathogen name e.g., MDR E. coli")
+    antimicrobial_agent: str = Field(..., max_length=100, description="Antimicrobial agent tested")
 
-    county: str
-    sub_county: Optional[str] = None
-    facility_type: Optional[str] = None
+    county: str = Field(..., max_length=50)
+    sub_county: Optional[str] = Field(None, max_length=50)
+    facility_type: Optional[str] = Field(None, max_length=50)
 
-    result_value: str = Field(..., description="SIR classification (Resistant, Intermediate, Sensitive)")
+    result_value: str = Field(..., max_length=1, description="SIR classification (S, I, R)")
     mic_value: Optional[float] = None
 
     is_synthetic: int = Field(default=1)
 
-    hl7_fhir_id: Optional[str] = None
-    woah_reference: Optional[str] = None
+    hl7_fhir_id: Optional[str] = Field(None, max_length=50)
+    woah_reference: Optional[str] = Field(None, max_length=50)
 
     ncbi_tax_id: Optional[int] = None
-    sequencing_platform: Optional[str] = None
-    assembly_id: Optional[str] = None
-    accession_number: Optional[str] = None
-    qc_status: Optional[str] = None
+    sequencing_platform: Optional[str] = Field(None, max_length=50)
+    assembly_id: Optional[str] = Field(None, max_length=50)
+    accession_number: Optional[str] = Field(None, max_length=50)
+    qc_status: Optional[str] = Field(None, max_length=20)
 
     # ── GAP-AMR Disaggregation & Metadata ─────────────────────────────────────────
-    patient_sex: Optional[str] = None
+    patient_sex: Optional[str] = Field(None, max_length=10)
     patient_age_years: Optional[int] = None
-    admission_type: Optional[str] = None
+    admission_type: Optional[str] = Field(None, max_length=50)
     
-    animal_species: Optional[str] = None
-    production_system: Optional[str] = None
+    animal_species: Optional[str] = Field(None, max_length=50)
+    production_system: Optional[str] = Field(None, max_length=50)
     
     infarm_compliant: Optional[bool] = False
     animuse_compliant: Optional[bool] = False
     glass_eligible: Optional[bool] = False
-    woah_animal_aware_class: Optional[str] = None
+    woah_animal_aware_class: Optional[str] = Field(None, max_length=50)
     antimicrobial_residue_ppm: Optional[float] = None
 
     genomic_signals: List[GenomicSignalCreate] = []
@@ -74,7 +75,7 @@ class AMRRecordCreate(BaseModel):
 
 
 class AMRRecordResponse(AMRRecordCreate):
-    id: int
+    id: uuid.UUID
     sample_collection_date: datetime
     data_quality_score: float
     missing_fields: Optional[Dict[str, Any]] = None
@@ -84,12 +85,12 @@ class AMRRecordResponse(AMRRecordCreate):
 
 class AlertResponse(BaseModel):
     """Inline alert summary returned within ingest responses when anomaly is flagged."""
-    id: int
-    record_id: int
+    id: uuid.UUID
+    amr_isolate_record_id: uuid.UUID
     anomaly_score: float
     hotspot_magnitude: float
     feature_importance: Optional[Dict[str, Any]] = None
-    timestamp: datetime
+    detection_timestamp: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -99,6 +100,6 @@ class WhonetIngestResponse(BaseModel):
     status: str = "success"
     processed_records: int
     failed_critical: int
-    record_ids: List[int] = Field(default_factory=list)
+    record_ids: List[uuid.UUID] = Field(default_factory=list)
     task_queued: bool = False
     message: str

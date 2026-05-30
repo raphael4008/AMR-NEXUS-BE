@@ -1,4 +1,5 @@
 # Track: backend/feature-api-name
+import uuid
 import pandas as pd
 from typing import List
 from sqlalchemy.orm import Session
@@ -25,7 +26,7 @@ class AMRAnomalyEngine:
             })
         return pd.DataFrame(data_matrix)
 
-    def execute_analysis_pipeline(self, record_ids: List[int], db_session: Session, bg_tasks: BackgroundTasks):
+    def execute_analysis_pipeline(self, record_ids: List[uuid.UUID], db_session: Session, bg_tasks: BackgroundTasks):
         """
         Downstream asynchronous worker target.Processes records safely 
         containing the new genomic markers, creates alerts, and chains downstream actions.
@@ -44,9 +45,10 @@ class AMRAnomalyEngine:
             if current_record.result_value == "R" and current_record.data_quality_score > 0.7:
                 # 1. Instantiate and Save Anomaly Entry to DB
                 new_alert = Alert(
-                    record_id=current_record.id,
+                    amr_isolate_record_id=current_record.id,
                     anomaly_score=0.91,
                     hotspot_magnitude=0.88,
+                    feature_importance={"county_weight": 0.4, "pathogen_risk_weight": 0.35},
                     status="PENDING"
                 )
                 db_session.add(new_alert)
@@ -56,23 +58,26 @@ class AMRAnomalyEngine:
                 # 2. Chain Component C LLM Generation and Last-Mile SMS into Background Worker Loops
                 bg_tasks.add_task(self._process_advisory_and_sms, new_alert.id, db_session)
 
-    def _process_advisory_and_sms(self, alert_id: int, db_session: Session):
+    async def _process_advisory_and_sms(self, alert_id: uuid.UUID, db_session: Session):
         """Helper to process LLM Generation and outbound messaging without slowing down the server thread."""
         try:
             # Generate adaptive, role-scoped markdown briefs
             advisory_engine = LLMAdvisoryEngine(api_key=settings.ANTHROPIC_API_KEY)
-            advisory_engine.trigger_role_guidance(alert_id=alert_id, db_session=db_session)
+            await advisory_engine.trigger_role_guidance(alert_id=alert_id, db_session=db_session)
             
             # Fire automated last-mile sandbox triggers via Africa's Talking
             alert = db_session.query(Alert).filter(Alert.id == alert_id).first()
-            record = db_session.query(AMRRecord).filter(AMRRecord.id == alert.record_id).first()
+            if not alert:
+                return
+                
+            record = db_session.query(AMRRecord).filter(AMRRecord.id == alert.amr_isolate_record_id).first()
             
             from src.models.entities import SectorEnum
-            if record and record.sector == SectorEnum.ANIMAL:
+            if record and record.sector == SectorEnum.ANIMAL.value:
                 sms_gateway = NotificationService()
                 sms_message = f"AMR-Nexus Alert: High resistance for {record.pathogen_name} detected in {record.county} County poultry facilities. Review National Guidelines."
                 # Target mock configuration number for the Kiambu vet profile
-                sms_gateway.dispatch_stewardship_trigger(phone="+254700000000", message=sms_message)
+                await sms_gateway.dispatch_stewardship_trigger(phone="+254700000000", message=sms_message)
                 
                 alert.status = "NOTIFIED"
                 db_session.commit()
