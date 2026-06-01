@@ -1,0 +1,29 @@
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
+import App from './App';
+import './index.css';
+
+
+document.documentElement.classList.add('dark');
+
+async function prepareApp() {
+  
+  if (import.meta.env.DEV && import.meta.env.VITE_ENABLE_MSW !== 'false') {
+    const { worker } = await import('./mocks/browser');
+    await worker.start({
+      onUnhandledRequest: 'bypass',
+      quiet: true, 
+    });
+  }
+}
+
+prepareApp().then(() => {
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    <React.StrictMode>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </React.StrictMode>
+  );
+});
