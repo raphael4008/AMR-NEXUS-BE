@@ -45,6 +45,12 @@ CREATE INDEX idx_geo_pathogen_time_v2 ON amr_isolate_records (county, pathogen_n
 CREATE INDEX idx_amr_isolate_records_pathogen ON amr_isolate_records(pathogen_name);
 CREATE INDEX idx_amr_isolate_records_county ON amr_isolate_records(county);
 CREATE INDEX idx_amr_isolate_records_compliance ON amr_isolate_records USING btree(infarm_compliant, animuse_compliant, glass_eligible);
+CREATE INDEX idx_geo_sector ON amr_isolate_records (county, sub_county, sector);
+CREATE INDEX idx_time_series ON amr_isolate_records (
+    EXTRACT(YEAR FROM sample_collection_date),
+    EXTRACT(MONTH FROM sample_collection_date),
+    EXTRACT(WEEK FROM sample_collection_date)
+);
 
 -- Trigger routine to ensure pathogen_name is auto-normalized into standard formats
 CREATE OR REPLACE FUNCTION tg_normalize_pathogen_name_v2()

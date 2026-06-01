@@ -127,40 +127,41 @@ def valid_payload():
     """Four clean, fully-populated records that should all pass cleaning."""
     return [
         {
-            "sector": "human",
+            "sector": "HUMAN",
             "pathogen_name": "E. coli",
             "antimicrobial_agent": "Ciprofloxacin",
             "county": "Nairobi",
-            "result_value": "Resistant",
+            "result_value": "R",
             "facility_type": "Tertiary Hospital",
             "patient_sex": "Female",
             "patient_age_years": 42,
             "admission_type": "Inpatient",
+            "clinical_indication": "Sepsis",
         },
         {
-            "sector": "animal",
+            "sector": "ANIMAL",
             "pathogen_name": "Salmonella",
             "antimicrobial_agent": "Tetracycline",
             "county": "Kiambu",
-            "result_value": "Sensitive",
+            "result_value": "S",
             "facility_type": "Poultry Farm",
             "animal_species": "Chicken",
             "production_system": "Commercial",
         },
         {
-            "sector": "environment",
+            "sector": "ENVIRONMENT",
             "pathogen_name": "Salmonella",
             "antimicrobial_agent": "Ceftriaxone",
             "county": "Mombasa",
-            "result_value": "Resistant",
+            "result_value": "R",
             "facility_type": "River Water",
         },
         {
-            "sector": "human",
+            "sector": "HUMAN",
             "pathogen_name": "K. pneumoniae",
             "antimicrobial_agent": "Meropenem",
             "county": "Kisumu",
-            "result_value": "Intermediate",
+            "result_value": "I",
             "facility_type": "Clinic",
             "patient_sex": "Male",
             "patient_age_years": 12,
@@ -174,41 +175,42 @@ def dirty_payload():
     """Mix of valid + critically incomplete records."""
     return [
         {
-            "sector": "human",
+            "sector": "HUMAN",
             "pathogen_name": "E. coli",
             "antimicrobial_agent": "Ciprofloxacin",
             "county": "Nairobi",
-            "result_value": "Resistant",
+            "result_value": "R",
             "facility_type": "Hospital",
             "patient_sex": "Female",
             "patient_age_years": 42,
             "admission_type": "Inpatient",
+            "clinical_indication": "Fever",
         },
         {
             # CRITICAL FAILURE — pathogen_name is None
-            "sector": "animal",
+            "sector": "ANIMAL",
             "pathogen_name": None,
             "antimicrobial_agent": "Tetracycline",
             "county": "Kiambu",
-            "result_value": "Sensitive",
+            "result_value": "S",
             "facility_type": None,   # non-critical missing
             "animal_species": "Chicken",
             "production_system": "Commercial",
         },
         {
-            "sector": "environment",
+            "sector": "ENVIRONMENT",
             "pathogen_name": "Salmonella",
             "antimicrobial_agent": "Ceftriaxone",
             "county": "Mombasa",
-            "result_value": "Resistant",
+            "result_value": "R",
             "facility_type": "River Water",
         },
         {
-            "sector": "human",
+            "sector": "HUMAN",
             "pathogen_name": "K. pneumoniae",
             "antimicrobial_agent": "Meropenem",
             "county": "Kisumu",
-            "result_value": "Intermediate",
+            "result_value": "I",
             "facility_type": "Clinic",
             "patient_sex": "Male",
             "patient_age_years": 12,
@@ -224,7 +226,7 @@ def sample_amr_record(db_session):
     """A persisted AMRRecord for tests that need a real DB object."""
     from src.models.entities import AMRRecord, SectorEnum
     record = AMRRecord(
-        sector=SectorEnum.HUMAN,
+        sector=SectorEnum.HUMAN.value,
         pathogen_name="E. coli",
         antimicrobial_agent="Ciprofloxacin",
         county="Nairobi",
@@ -247,7 +249,7 @@ def sample_alert(db_session, sample_amr_record):
     """A persisted Alert linked to sample_amr_record."""
     from src.models.entities import Alert
     alert = Alert(
-        record_id=sample_amr_record.id,
+        amr_isolate_record_id=sample_amr_record.id,
         anomaly_score=-0.3145,
         hotspot_magnitude=0.75,
         feature_importance={
@@ -270,7 +272,7 @@ def sample_guidance(db_session, sample_alert):
     guidance = GuidanceBrief(
         alert_id=sample_alert.id,
         role_target="National Coordinator",
-        guidance_markdown="## 🚨 Resistance Signal Summary\nTest advisory brief generated in test fixture.",
+        content_markdown="## 🚨 Resistance Signal Summary\nTest advisory brief generated in test fixture.",
         status="PENDING",
     )
     db_session.add(guidance)

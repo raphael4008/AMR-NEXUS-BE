@@ -30,9 +30,12 @@ def run_downstream_evaluations(record_ids: List[int]):
         # 1. Handoff to ML Model (Gavinta/Jesse's Domain)
         anomaly_engine.execute_analysis_pipeline(record_ids, db, bg_tasks)
         
+        import asyncio
         # 2. Execute any downstream tasks (LLM engine, SMS)
         for task in bg_tasks.tasks:
-            task.func(*task.args, **task.kwargs)
+            result = task.func(*task.args, **task.kwargs)
+            if asyncio.iscoroutine(result):
+                asyncio.run(result)
     finally:
         db.close()
 
@@ -75,7 +78,7 @@ async def ingest_whonet_data(
 
         mappings.append({
             "sample_collection_date": rec.get("sample_collection_date", now_utc),
-            "sector": sector_val,
+            "sector": sector_val.value,
             "pathogen_name": rec["pathogen_name"],
             "antimicrobial_agent": rec["antimicrobial_agent"],
             "county": rec["county"],
@@ -94,6 +97,7 @@ async def ingest_whonet_data(
             "patient_sex": rec.get("patient_sex"),
             "patient_age_years": rec.get("patient_age_years"),
             "admission_type": rec.get("admission_type"),
+            "clinical_indication": rec.get("clinical_indication"),
             "animal_species": rec.get("animal_species"),
             "production_system": rec.get("production_system"),
             "infarm_compliant": rec.get("infarm_compliant", False),

@@ -103,15 +103,16 @@ class TestIngestEndpoint:
 
     def test_single_record_payload(self, client, auth_headers):
         single = [{
-            "sector": "human",
+            "sector": "HUMAN",
             "pathogen_name": "E. coli",
             "antimicrobial_agent": "Ciprofloxacin",
             "county": "Nairobi",
-            "result_value": "Resistant",
+            "result_value": "R",
             "facility_type": "Hospital",
             "patient_sex": "Male",
             "patient_age_years": 35,
             "admission_type": "Inpatient",
+            "clinical_indication": "Fever",
         }]
         resp = client.post("/api/v1/backbone/ingest/whonet", json=single, headers=auth_headers)
         assert resp.status_code == 202

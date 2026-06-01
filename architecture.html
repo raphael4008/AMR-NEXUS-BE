@@ -57,17 +57,57 @@
 <h2>2. Monorepo Structure & Separation of Labor</h2>
 <p>The repository has been restructured into a strict <strong>Monorepo</strong> to support the 16-person team. Strict boundaries prevent overlap between software engineers, data scientists, and frontend developers.</p>
 
-<div class="codehilite"><pre><span></span><code>amr-nexus-monorepo/
-├── backend/            (Owned by Raph & Naomi)
-│   ├── src/            (FastAPI Backbone, Cleaners, DB Models)
-│   └── tests/          (Hermetic Pytest Suite)
-├── database/           (Owned by Backend Team)
-│   └── schema.sql      (PostgreSQL DDL, Migrations)
-├── ml-ai/              (Owned by Gavinta, Jesse, Nicole, Celine)
-│   ├── models/         (IsolationForest binaries, LLM Prompts)
-│   └── pipelines/      (Data generation, ML training)
-└── frontend/           (Owned by Lowell & UI Team)
-    └── dashboard/      (Next.js / React UI)
+<div class="codehilite"><pre><span></span><code>amr-nexus-backend/
+├── database/
+│   └── schema_v1.2.sql          ◀ OWNED BY: Raph (Database Track) 
+│                                ◀ FUNCTION: Instantiates raw PostgreSQL DDL table structures.
+│                                ◀ INTERFACE: Sets hypertable chunks, triggers, and indices.
+│
+└── backend/
+    ├── src/
+    │   ├── main.py              ◀ OWNED BY: Raph (Backend Track) 
+    │   │                        ◀ FUNCTION: Central application factory and ASGI middleware manager.
+    │   │                        ◀ INTERFACE: Mounts API routers; exposes standard `/health` probes.
+    │   │
+    │   ├── core/                ◀ [RAPH'S ZONE — SYSTEM INFRASTRUCTURE CORE] 
+    │   │   ├── config.py        ◀ FUNCTION: Loads and validates environment variables using Pydantic Settings.
+    │   │   └── security.py      ◀ FUNCTION: Generates JWT claims, handles bcrypt hashing, and enforces RBAC.
+    │   │                        ◀ INTERFACE: Restricts county vs. national scopes using the RoleChecker dependency.
+    │   │
+    │   ├── models/              ◀ [RAPH'S ZONE — PERSISTENCE & ENTITIES] 
+    │   │   ├── base.py          ◀ FUNCTION: Instantiates SQLAlchemy connection pool engine and context handlers.
+    │   │   └── entities.py      ◀ FUNCTION: Defines relational maps (`AMRRecord`, `Alert`, `GuidanceBrief`).
+    │   │                        ◀ DB LINK: Executes ACID transactions and migrations inside PostgreSQL.
+    │   │
+    │   ├── schemas/             ◀ [SHARED GATEWAY CONTRACT ZONE] 
+    │   │   ├── backbone.py      ◀ FUNCTION: Defines `AMRRecordCreate` DTO input validation schemas.
+    │   │   │                    ◀ INPUT LINK: Validates Nicole's incoming synthetic data structures.
+    │   │   └── intelligence.py  ◀ FUNCTION: Establishes type-safe output contracts for telemetry variables.
+    │   │                        ◀ FRONTEND LINK: Feeds structured JSON data straight to Lowell's React widgets.
+    │   │
+    │   ├── api/                 ◀ [ROUTING LAYER — REST CONTROLLERS] 
+    │   │   ├── auth.py          ◀ FUNCTION: Exposes the login resource endpoint (`POST /api/v1/auth/token`).
+    │   │   ├── backbone.py      ◀ FUNCTION: Exposes bulk ingestion gateway (`POST /api/v1/backbone/ingest/whonet`).
+    │   │   └── intelligence.py  ◀ FUNCTION: Exposes telemetry dashboards and geo-JSON coordinate meshes.
+    │   │                        ◀ FRONTEND LINK: Serves as the direct hook for Leaflet map component views.
+    │   │
+    │   └── services/            ◀ [BUSINESS LOGIC DOMAIN ENGINES] 
+    │       ├── ingestion/       ◀ [RAPH'S ZONE] 
+    │       │   └── cleaner.py   ◀ FUNCTION: Vectorized data cleaning pipeline applying WHO GLASS rule audits.
+    │       │                    ◀ INPUT LINK: Imputes and scores incoming synthetic datasets from Nicole.
+    │       │
+    │       ├── ml_engine/       ◀ [NAOMI'S ZONE] 
+    │       │   └── anomaly_detector.py◀ FUNCTION: Feature-engineering wrapper interface matching model parameters.
+    │       │                    ◀ ML-AI LINK: Loads pre-trained model signatures provided by Gavinta/Jesse.
+    │       │                    ◀ PROCESS: Runs async anomaly scoring and inserts entries to the `Alert` table.
+    │       │
+    │       ├── intelligence/    ◀ [NAOMI'S ZONE] 
+    │       │   └── llm_advisory.py◀ FUNCTION: Adaptive briefing gateway connecting to the Anthropic client.
+    │       │                    ◀ PROCESS: Maps alert data to role-scoped prompts, generating markdown files.
+    │       │
+    │       └── notifications/   ◀ [NAOMI'S ZONE] 
+    │           └── sms_service.py◀ FUNCTION: Dispatches async alerts via Africa's Talking Sandbox SDK.
+    │                                ◀ CONSUMER LINK: Sends out last-mile texts to field county vets.
 </code></pre></div>
 
 <hr />

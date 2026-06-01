@@ -1,0 +1,50 @@
+backend
+├── docker-compose.yml
+├── Dockerfile
+├── pytest.ini
+├── requirements.txt
+├── src
+│   ├── api
+│   │   ├── auth.py
+│   │   ├── backbone.py
+│   │   └── intelligence.py
+│   ├── core
+│   │   ├── config.py
+│   │   └── security.py
+│   ├── main.py
+│   ├── models
+│   │   ├── base.py
+│   │   └── entities.py
+│   ├── schemas
+│   │   ├── backbone.py
+│   │   └── intelligence.py
+│   ├── services
+│   │   ├── ingestion
+│   │   │   ├── cleaner.py
+│   │   │   └── __init__.py
+│   │   ├── intelligence
+│   │   │   └── llm_advisory.py
+│   │   ├── ml_engine
+│   │   │   └── anomaly_detector.py
+│   │   └── notifications
+│   │       ├── __init__.py
+│   │       └── sms_service.py
+│   ├── storage
+│   │   └── migrations
+│   │       ├── env.py
+│   │       ├── README
+│   │       ├── script.py.mako
+│   │       └── versions
+│   └── utils
+│       └── synthetic_gen.py
+└── tests
+    ├── conftest.py
+    ├── __init__.py
+    ├── test_api.py
+    ├── test_cleaner.py
+    ├── test_llm_advisory.py
+    ├── test_models.py
+    ├── test_pipeline_integration.py
+    └── test_security.py
+
+16 directories, 32 files

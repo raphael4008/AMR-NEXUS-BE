@@ -43,6 +43,8 @@ class Settings(BaseSettings):
 
     # ── LLM Advisory — Component C ─────────────────────────────────────────────
     ANTHROPIC_API_KEY: str = ""
+    OPENAI_API_KEY: str = ""
+    GEMINI_API_KEY: str = ""
 
     # ── Africa's Talking SMS ────────────────────────────────────────────────────
     AT_USERNAME: str = "sandbox"

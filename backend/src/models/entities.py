@@ -80,6 +80,7 @@ class AMRRecord(Base):
     patient_sex = Column(String(10), nullable=True)
     patient_age_years = Column(Integer, nullable=True)
     admission_type = Column(String(50), nullable=True)
+    clinical_indication = Column(String(100), nullable=True)
     animal_species = Column(String(50), nullable=True)
     production_system = Column(String(50), nullable=True)
 

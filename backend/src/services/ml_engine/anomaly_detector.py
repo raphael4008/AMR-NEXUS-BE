@@ -62,7 +62,7 @@ class AMRAnomalyEngine:
         """Helper to process LLM Generation and outbound messaging without slowing down the server thread."""
         try:
             # Generate adaptive, role-scoped markdown briefs
-            advisory_engine = LLMAdvisoryEngine(api_key=settings.ANTHROPIC_API_KEY)
+            advisory_engine = LLMAdvisoryEngine()
             await advisory_engine.trigger_role_guidance(alert_id=alert_id, db_session=db_session)
             
             # Fire automated last-mile sandbox triggers via Africa's Talking

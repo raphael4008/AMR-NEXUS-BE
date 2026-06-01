@@ -14,13 +14,12 @@ client = TestClient(app)
 @pytest.fixture
 def mock_claud_client():
     """Mocks out external Claude API response loops to protect the testing environment from network lag."""
-    with patch("src.services.intelligence.llm_advisory.anthropic.Anthropic") as mock_anthropic:
-        mock_instance = MagicMock()
-        mock_msg_output = MagicMock()
-        mock_msg_output.content = [MagicMock(text="### WHO AWaRe Stewardship Brief\n1. Enforce alternative prescribing patterns.")]
-        mock_instance.messages.create.return_value = mock_msg_output
-        mock_anthropic.return_value = mock_instance
-        yield mock_instance
+    with patch("src.services.intelligence.llm_advisory.acompletion") as mock_acompletion:
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "### WHO AWaRe Stewardship Brief\n1. Enforce alternative prescribing patterns."
+        mock_acompletion.return_value = mock_response
+        yield mock_acompletion
 
 @pytest.fixture
 def mock_sms_gateway():
@@ -31,7 +30,8 @@ def mock_sms_gateway():
         mock_at.SMS.return_value = mock_sms_instance
         yield mock_sms_instance
 
-def test_complete_end_to_end_backend_processing_flow(
+@pytest.mark.asyncio
+async def test_complete_end_to_end_backend_processing_flow(
     db_session: Session, 
     mock_claud_client, 
     mock_sms_gateway
@@ -99,13 +99,13 @@ def test_complete_end_to_end_backend_processing_flow(
     )
 
     # 6. Assert that the record was correctly flagged and committed as a system alert
-    triggered_alert = db_session.query(Alert).filter(Alert.record_id == saved_record.id).first()
+    triggered_alert = db_session.query(Alert).filter(Alert.amr_isolate_record_id == saved_record.id).first()
     assert triggered_alert is not None
     assert triggered_alert.status == "PENDING"
 
     # 7. Execute the combined Claude Advisory & SMS generation task synchronously
     db_session.refresh(triggered_alert)
-    ai_engine._process_advisory_and_sms(alert_id=triggered_alert.id, db_session=db_session)
+    await ai_engine._process_advisory_and_sms(alert_id=triggered_alert.id, db_session=db_session)
 
     # 8. Assert that the database transaction completed end-to-end smoothly
     db_session.refresh(triggered_alert)
@@ -114,7 +114,7 @@ def test_complete_end_to_end_backend_processing_flow(
     # Confirm Claude's role-scoped advisory markdown was successfully saved to the database
     saved_brief = db_session.query(GuidanceBrief).filter(GuidanceBrief.alert_id == triggered_alert.id).first()
     assert saved_brief is not None
-    assert "WHO AWaRe" in saved_brief.guidance_markdown
+    assert "WHO AWaRe" in saved_brief.content_markdown
 
     # Clear dependency overrides to prevent test contamination
     app.dependency_overrides.clear()

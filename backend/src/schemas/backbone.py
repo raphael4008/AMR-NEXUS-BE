@@ -39,6 +39,7 @@ class AMRRecordCreate(BaseModel):
     patient_sex: Optional[str] = Field(None, max_length=10)
     patient_age_years: Optional[int] = None
     admission_type: Optional[str] = Field(None, max_length=50)
+    clinical_indication: Optional[str] = Field(None, max_length=100)
     
     animal_species: Optional[str] = Field(None, max_length=50)
     production_system: Optional[str] = Field(None, max_length=50)
@@ -66,8 +67,8 @@ class AMRRecordCreate(BaseModel):
     @model_validator(mode="after")
     def validate_sector_disaggregation(self) -> "AMRRecordCreate":
         if self.sector == SectorEnum.HUMAN:
-            if self.patient_sex is None or self.patient_age_years is None or self.admission_type is None:
-                raise ValueError("Human records require patient_sex, patient_age_years, and admission_type for GLASS compliance.")
+            if self.patient_sex is None or self.patient_age_years is None or self.clinical_indication is None:
+                raise ValueError("Human records require patient_sex, patient_age_years, and clinical_indication for GLASS compliance.")
         elif self.sector == SectorEnum.ANIMAL:
             if self.animal_species is None or self.production_system is None:
                 raise ValueError("Animal records require animal_species and production_system for InFARM compliance.")

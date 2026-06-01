@@ -17,6 +17,7 @@ Coverage targets:
 import pytest
 from datetime import datetime
 from pydantic import ValidationError
+import uuid
 
 from src.models.entities import SectorEnum, AMRRecord, GenomicSignal, Alert, GuidanceBrief, GuidanceStatusEnum
 from src.schemas.backbone import AMRRecordCreate, AMRRecordResponse
@@ -26,13 +27,13 @@ from src.schemas.backbone import AMRRecordCreate, AMRRecordResponse
 
 class TestSectorEnum:
     def test_has_human_value(self):
-        assert SectorEnum.HUMAN.value == "human"
+        assert SectorEnum.HUMAN.value == "HUMAN"
 
     def test_has_animal_value(self):
-        assert SectorEnum.ANIMAL.value == "animal"
+        assert SectorEnum.ANIMAL.value == "ANIMAL"
 
     def test_has_environment_value(self):
-        assert SectorEnum.ENVIRONMENT.value == "environment"
+        assert SectorEnum.ENVIRONMENT.value == "ENVIRONMENT"
 
     def test_enum_has_exactly_three_members(self):
         assert len(SectorEnum) == 3
@@ -75,7 +76,7 @@ class TestAMRRecordDefaults:
         assert record.missing_fields is None
 
     def test_tablename_is_amr_records(self):
-        assert AMRRecord.__tablename__ == "amr_records"
+        assert AMRRecord.__tablename__ == "amr_isolate_records"
 
     def test_relationship_attribute_exists(self):
         assert hasattr(AMRRecord, "genomic_signals")
@@ -92,7 +93,7 @@ class TestGenomicSignalModel:
 class TestAlertModel:
     def test_rev2_fields_exist(self):
         """Rev 2 Alert schema: anomaly_score, hotspot_magnitude, feature_importance."""
-        alert = Alert(record_id=1, anomaly_score=-0.3, hotspot_magnitude=0.75)
+        alert = Alert(amr_isolate_record_id=uuid.uuid4(), anomaly_score=-0.3, hotspot_magnitude=0.75)
         assert alert.anomaly_score == -0.3
         assert alert.hotspot_magnitude == 0.75
         assert alert.feature_importance is None  # optional
@@ -103,12 +104,12 @@ class TestAlertModel:
 
 class TestGuidanceModel:
     def test_tablename_is_guidance(self):
-        assert GuidanceBrief.__tablename__ == "guidance"
+        assert GuidanceBrief.__tablename__ == "guidance_briefs"
 
     def test_has_expected_fields(self):
-        g = GuidanceBrief(alert_id=1, role_target="National Coordinator", guidance_markdown="Test")
+        g = GuidanceBrief(alert_id=uuid.uuid4(), role_target="National Coordinator", content_markdown="Test")
         assert g.role_target == "National Coordinator"
-        assert g.guidance_markdown == "Test"
+        assert g.content_markdown == "Test"
 
     def test_status_enum_has_pending(self):
         g = GuidanceBrief(status="PENDING")
@@ -124,14 +125,15 @@ class TestGuidanceModel:
 class TestAMRRecordCreateSchema:
     def _valid_data(self, **overrides):
         data = {
-            "sector": "human",
+            "sector": "HUMAN",
             "pathogen_name": "E. coli",
             "antimicrobial_agent": "Ciprofloxacin",
             "county": "Nairobi",
-            "result_value": "Resistant",
+            "result_value": "R",
             "patient_sex": "Male",
             "patient_age_years": 35,
             "admission_type": "Inpatient",
+            "clinical_indication": "Fever",
         }
         data.update(overrides)
         return data
@@ -142,7 +144,7 @@ class TestAMRRecordCreateSchema:
 
     def test_sector_converted_to_enum(self):
         obj = AMRRecordCreate(**self._valid_data(
-            sector="animal",
+            sector="ANIMAL",
             patient_sex=None,
             patient_age_years=None,
             admission_type=None,

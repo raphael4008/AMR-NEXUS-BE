@@ -5,8 +5,8 @@ services:
   # ── FastAPI Application ─────────────────────────────────────────────────────
   api:
     build:
-      context: .
-      dockerfile: docker/Dockerfile
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: amr_nexus_api
     ports:
       - "8000:8000"
