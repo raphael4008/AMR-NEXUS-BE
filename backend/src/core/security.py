@@ -16,7 +16,7 @@ ROLE_COUNTY_CLINICIAN = "County Clinician"
 
 # ── Crypto context ──────────────────────────────────────────────────────────────
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/token")
 
 
 class TokenData(BaseModel):

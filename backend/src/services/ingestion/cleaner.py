@@ -47,9 +47,31 @@ class DataCleaner:
             df['sub_county'] = df['sub_county'].fillna(df['county'].map(county_modes))
             df['sub_county'] = df['sub_county'].fillna("Unknown")
 
-        # String Normalization for Pathogens
+        # String Normalization for Pathogens (covers case-insensitive variants)
         if 'pathogen_name' in df.columns:
-            df['pathogen_name'] = df['pathogen_name'].replace({"E. coli": "Escherichia coli"})
+            def _normalize_pathogen(v):
+                if not isinstance(v, str):
+                    return v
+                vl = v.lower()
+                if 'e. coli' in vl or 'e coli' in vl:
+                    return 'Escherichia coli'
+                if 's. aureus' in vl or 's aureus' in vl:
+                    return 'Staphylococcus aureus'
+                if 'k. pneumoniae' in vl or 'k pneumoniae' in vl:
+                    return 'Klebsiella pneumoniae'
+                return v
+            df['pathogen_name'] = df['pathogen_name'].apply(_normalize_pathogen)
+
+        # SIR Normalization — maps full-word values to single-char codes
+        # Prevents CHAR(1) data truncation in PostgreSQL production environment
+        _SIR_MAP = {
+            'resistant': 'R', 'susceptible': 'S', 'intermediate': 'I',
+            'sensitive': 'S', 'nonsusceptible': 'R',
+        }
+        if 'result_value' in df.columns:
+            df['result_value'] = df['result_value'].apply(
+                lambda v: _SIR_MAP.get(str(v).lower().strip(), v) if pd.notna(v) else v
+            )
 
         # 4. Isolate critical failures
         for col in self.critical_fields:

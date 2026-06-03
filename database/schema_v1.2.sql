@@ -79,6 +79,7 @@ CREATE TABLE alerts (
     anomaly_score NUMERIC NOT NULL,
     hotspot_magnitude NUMERIC NOT NULL,
     feature_importance JSONB,
+    status VARCHAR(50) NOT NULL DEFAULT 'PENDING',   -- PENDING | NOTIFIED
     FOREIGN KEY (amr_isolate_record_id) REFERENCES amr_isolate_records(id) ON DELETE CASCADE
 );
 
@@ -90,8 +91,19 @@ CREATE TABLE guidance_briefs (
     generation_timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     role_target VARCHAR(50) NOT NULL,
     content_markdown TEXT NOT NULL,
-    status VARCHAR(20) DEFAULT 'PENDING',
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',   -- PENDING | APPROVED
     FOREIGN KEY (alert_id) REFERENCES alerts(id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_guidance_briefs_alert_id ON guidance_briefs(alert_id);
+
+-- Bioinformatics genomic signal records (one-to-many with amr_isolate_records)
+CREATE TABLE genomic_signals (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    amr_isolate_record_id UUID NOT NULL,
+    resistance_genes JSONB,                          -- e.g. {"blaCTX-M-15": "detected"}
+    sequencing_platform VARCHAR(50),
+    FOREIGN KEY (amr_isolate_record_id) REFERENCES amr_isolate_records(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_genomic_signals_record_id ON genomic_signals(amr_isolate_record_id);

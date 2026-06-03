@@ -1,6 +1,6 @@
 # Track: backend/feature-api-name
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session, joinedload
 from typing import List
 
 from src.core.security import RoleChecker, TokenData, get_current_user_token
@@ -27,12 +27,18 @@ async def get_dashboard_telemetry(
     clean_count = db.query(AMRRecord).filter(AMRRecord.data_quality_score >= 0.85).count()
     compliance_index = (clean_count / total_scanned) if total_scanned > 0 else 1.0
 
-    # Fetch recent anomalies containing new genomic/surveillance markers
-    recent_alerts = db.query(Alert).order_by(Alert.detection_timestamp.desc()).limit(10).all()
+    # FIX: Single JOIN query replaces N+1 loop (10 separate SELECTs → 1 query)
+    recent_alerts = (
+        db.query(Alert)
+        .options(joinedload(Alert.record))
+        .order_by(Alert.detection_timestamp.desc())
+        .limit(10)
+        .all()
+    )
     anomalies_output = []
     
     for alert in recent_alerts:
-        record = db.query(AMRRecord).filter(AMRRecord.id == alert.amr_isolate_record_id).first()
+        record = alert.record  # Resolved from the joined load — no extra query
         if record:
             anomalies_output.append({
                 "record_id": str(record.id),

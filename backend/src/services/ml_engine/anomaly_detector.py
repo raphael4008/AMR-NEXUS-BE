@@ -38,11 +38,20 @@ class AMRAnomalyEngine:
         features_df = self.preprocess_records(records)
         
         # Invoke Gavinta and Jesse's predictive modeling outputs via deterministic stubs for Demo Day
-        for idx, row_data in features_df.iterrows():
-            current_record = records[idx]
+        # FIX: use enumerate() so list_idx is always the Python list position, not the DataFrame index.
+        new_alerts = []
+        for list_idx, (_, row_data) in enumerate(features_df.iterrows()):
+            current_record = records[list_idx]
             
+            # Guard: data_quality_score may be None before the DB flushes the column default
+            quality_score = float(current_record.data_quality_score or 0.0)
+
             # Simple demonstration trigger logic for the July 14 demo constraints
-            if current_record.result_value == "R" and current_record.data_quality_score > 0.7:
+            # Supports both single-char SIR ('R') and full-word ('Resistant') result values
+            result_val = str(current_record.result_value or "").strip()
+            is_resistant = result_val == "R" or result_val.lower() == "resistant"
+
+            if is_resistant and quality_score > 0.7:
                 # 1. Instantiate and Save Anomaly Entry to DB
                 new_alert = Alert(
                     amr_isolate_record_id=current_record.id,
@@ -52,9 +61,13 @@ class AMRAnomalyEngine:
                     status="PENDING"
                 )
                 db_session.add(new_alert)
-                db_session.commit()
-                db_session.refresh(new_alert)
+                new_alerts.append(new_alert)
 
+        # Single commit for all alerts in this batch
+        if new_alerts:
+            db_session.commit()
+            for new_alert in new_alerts:
+                db_session.refresh(new_alert)
                 # 2. Chain Component C LLM Generation and Last-Mile SMS into Background Worker Loops
                 bg_tasks.add_task(self._process_advisory_and_sms, new_alert.id, db_session)
 
