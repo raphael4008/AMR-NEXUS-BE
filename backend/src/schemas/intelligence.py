@@ -1,12 +1,26 @@
 # Track: backend/feature-api-name
+# Schema v1.3 — Intelligence output schemas aligned with updated dataset definitions.
+# Provides stable contracts for Lowell's React frontend maps and telemetry panels.
+
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from datetime import datetime
 
+
+# ── Geographic Coordinate Model ───────────────────────────────────────────────
+
 class GeoCentroidLocation(BaseModel):
+    """
+    Geographic centroid for a county/sub-county aggregate.
+    Populated from live DB latitude/longitude columns — no hardcoded centroids.
+    """
     county: str = Field(..., examples=["Nairobi", "Kiambu", "Machakos"])
-    latitude: float = Field(..., json_schema_extra={"geo_upper_bound": 90.0, "geo_lower_bound": -90.0})
-    longitude: float = Field(..., json_schema_extra={"geo_upper_bound": 180.0, "geo_lower_bound": -180.0})
+    sub_county: Optional[str] = Field(None, examples=["Kikuyu", "Ruiru"])
+    latitude: float = Field(..., ge=-90.0, le=90.0)
+    longitude: float = Field(..., ge=-180.0, le=180.0)
+
+
+# ── Anomaly Metric Summary ────────────────────────────────────────────────────
 
 class AnomalyMetricSummary(BaseModel):
     record_id: str
@@ -16,20 +30,67 @@ class AnomalyMetricSummary(BaseModel):
     anomaly_score: float
     data_quality_score: float
 
+
+# ── LLM Advisory Response ─────────────────────────────────────────────────────
+
 class DynamicRoleGuidanceResponse(BaseModel):
-    alert_id: int
+    alert_id: str
     user_role: str
     guidance_markdown: str
     generated_at: datetime
 
+
+# ── Dashboard Telemetry ───────────────────────────────────────────────────────
+
+class ResistanceBreakdown(BaseModel):
+    """Breakdown of SIR results across a sector or pathogen group."""
+    resistant_count: int
+    susceptible_count: int
+    intermediate_count: int
+    resistance_percent: float
+
+
 class DashboardTelemetrySummary(BaseModel):
+    """
+    Real-time macro telemetry snapshot for the national AMR intelligence dashboard.
+    Feeds top-level KPI cards and hotspot counters.
+    """
     total_isolates_scanned: int
     active_hotspots_detected: int
     national_compliance_index: float
+    resistance_breakdown: Optional[ResistanceBreakdown] = None
     recent_anomalies: List[AnomalyMetricSummary]
+    top_resistant_pathogens: Optional[List[Dict[str, Any]]] = None
+    last_updated: Optional[datetime] = None
+
+
+# ── Heatmap GeoJSON Response ──────────────────────────────────────────────────
 
 class HeatmapGeoJsonResponse(BaseModel):
+    """
+    Single data point for Lowell's Leaflet heatmap renderer.
+    Aggregated from live isolate records with real DB geo coordinates.
+    Fields align with the updated dataset column definitions (v1.3).
+    """
     location: GeoCentroidLocation
-    intensity_weight: float
-    pathogen_profile: str
-    resistance_level: str
+    intensity_weight: float = Field(..., ge=0.0, le=1.0, description="Normalized heatmap weight (0–1)")
+    pathogen_profile: str = Field(..., description="Primary pathogen detected at this location")
+    resistance_level: str = Field(..., description="Dominant SIR result: S | I | R")
+    classification: Optional[str] = Field(None, description="MDR | XDR | PDR | Susceptible")
+    resistance_percent: Optional[float] = Field(None, description="Human-readable resistance rate")
+    sector: Optional[str] = Field(None, description="HUMAN | ANIMAL | ENVIRONMENT")
+    sample_count: Optional[int] = Field(None, description="Number of isolates at this point")
+
+
+# ── Gene Intelligence ─────────────────────────────────────────────────────────
+
+class ResistanceGeneResponse(BaseModel):
+    """Reference gene record from the normalized resistance_genes catalog."""
+    gene_id: str
+    gene_name: str
+    gene_family: Optional[str] = None
+    resistance_mechanism: Optional[str] = None
+    drug_class_target: Optional[str] = None
+    phenotype: Optional[str] = None
+    glass_relevant: bool
+    who_priority_flag: bool

@@ -129,9 +129,9 @@ def valid_payload():
         {
             "sector": "HUMAN",
             "pathogen_name": "E. coli",
-            "antimicrobial_agent": "Ciprofloxacin",
+            "antibiotic_name": "Ciprofloxacin",
             "county": "Nairobi",
-            "result_value": "R",
+            "sir_result": "R",
             "facility_type": "Tertiary Hospital",
             "patient_sex": "Female",
             "patient_age_years": 42,
@@ -140,32 +140,33 @@ def valid_payload():
         },
         {
             "sector": "ANIMAL",
-            "pathogen_name": "Salmonella",
-            "antimicrobial_agent": "Tetracycline",
+            "pathogen_name": "Salmonella enterica",
+            "antibiotic_name": "Tetracycline",
             "county": "Kiambu",
-            "result_value": "S",
+            "sir_result": "S",
             "facility_type": "Poultry Farm",
             "animal_species": "Chicken",
             "production_system": "Commercial",
         },
         {
             "sector": "ENVIRONMENT",
-            "pathogen_name": "Salmonella",
-            "antimicrobial_agent": "Ceftriaxone",
+            "pathogen_name": "Salmonella enterica",
+            "antibiotic_name": "Ceftriaxone",
             "county": "Mombasa",
-            "result_value": "R",
+            "sir_result": "R",
             "facility_type": "River Water",
         },
         {
             "sector": "HUMAN",
             "pathogen_name": "K. pneumoniae",
-            "antimicrobial_agent": "Meropenem",
+            "antibiotic_name": "Meropenem",
             "county": "Kisumu",
-            "result_value": "I",
+            "sir_result": "I",
             "facility_type": "Clinic",
             "patient_sex": "Male",
             "patient_age_years": 12,
             "admission_type": "Outpatient",
+            "clinical_indication": "UTI",
         },
     ]
 
@@ -177,9 +178,9 @@ def dirty_payload():
         {
             "sector": "HUMAN",
             "pathogen_name": "E. coli",
-            "antimicrobial_agent": "Ciprofloxacin",
+            "antibiotic_name": "Ciprofloxacin",
             "county": "Nairobi",
-            "result_value": "R",
+            "sir_result": "R",
             "facility_type": "Hospital",
             "patient_sex": "Female",
             "patient_age_years": 42,
@@ -190,31 +191,32 @@ def dirty_payload():
             # CRITICAL FAILURE — pathogen_name is None
             "sector": "ANIMAL",
             "pathogen_name": None,
-            "antimicrobial_agent": "Tetracycline",
+            "antibiotic_name": "Tetracycline",
             "county": "Kiambu",
-            "result_value": "S",
+            "sir_result": "S",
             "facility_type": None,   # non-critical missing
             "animal_species": "Chicken",
             "production_system": "Commercial",
         },
         {
             "sector": "ENVIRONMENT",
-            "pathogen_name": "Salmonella",
-            "antimicrobial_agent": "Ceftriaxone",
+            "pathogen_name": "Salmonella enterica",
+            "antibiotic_name": "Ceftriaxone",
             "county": "Mombasa",
-            "result_value": "R",
+            "sir_result": "R",
             "facility_type": "River Water",
         },
         {
             "sector": "HUMAN",
             "pathogen_name": "K. pneumoniae",
-            "antimicrobial_agent": "Meropenem",
+            "antibiotic_name": "Meropenem",
             "county": "Kisumu",
-            "result_value": "I",
+            "sir_result": "I",
             "facility_type": "Clinic",
             "patient_sex": "Male",
             "patient_age_years": 12,
             "admission_type": "Outpatient",
+            "clinical_indication": "UTI",
         },
     ]
 
@@ -223,21 +225,24 @@ def dirty_payload():
 
 @pytest.fixture
 def sample_amr_record(db_session):
-    """A persisted AMRRecord for tests that need a real DB object."""
+    """A persisted AMRRecord for tests that need a real DB object (v1.3 schema)."""
     from src.models.entities import AMRRecord, SectorEnum
     record = AMRRecord(
         sector=SectorEnum.HUMAN.value,
-        pathogen_name="E. coli",
-        antimicrobial_agent="Ciprofloxacin",
+        pathogen_name="Escherichia coli",
+        antibiotic_name="Ciprofloxacin",
+        antibiotic_class="Fluoroquinolone",
         county="Nairobi",
         sub_county="Westlands",
         facility_type="Tertiary Hospital",
-        result_value="Resistant",
+        sir_result="R",
         patient_sex="Female",
         patient_age_years=42,
         admission_type="Inpatient",
+        clinical_indication="Sepsis",
         data_quality_score=0.95,
         is_synthetic=1,
+        submission_type="SYNTHETIC",
     )
     db_session.add(record)
     db_session.flush()
