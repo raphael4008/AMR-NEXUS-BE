@@ -5,7 +5,7 @@
 import uuid
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from typing import List, Optional, Dict, Any
-from datetime import datetime, date
+from datetime import datetime
 from src.models.entities import SectorEnum
 
 
@@ -33,8 +33,10 @@ class AMRRecordCreate(BaseModel):
     WHO GAP-AMR 2026-2036 disaggregation rules.
     """
 
-    # ── One Health Sector ──────────────────────────────────────────────────────
+    # ── One Health Sector & Core Timeline ──────────────────────────────────────
     sector: SectorEnum = Field(..., description="HUMAN | ANIMAL | ENVIRONMENT")
+    sample_collection_date: datetime = Field(..., description="ISO format: YYYY-MM-DDTHH:MM:SS")    
+    submission_type: Optional[str] = Field("SYNTHETIC", description="SYNTHETIC | REAL | IMPORTED")
 
     # ── Pathogen Taxonomy (Unmapped Variables 1–3) ─────────────────────────────
     pathogen_name: str = Field(..., max_length=150)
@@ -60,15 +62,11 @@ class AMRRecordCreate(BaseModel):
     specimen_type: Optional[str] = Field(None, max_length=100)
     resistance_rate: Optional[float] = Field(None, ge=0.0, le=1.0, description="Decimal 0–1, e.g. 0.685")
     resistance_percent: Optional[float] = Field(None, ge=0.0, le=100.0, description="Human-readable, e.g. 68.50")
-    classification: Optional[str] = Field(None, description="MDR | XDR | PDR | Susceptible")
+    classification: Optional[str] = Field(None, description="MDR | XDR | PDR | Susceptible | Unknown")
     sample_size: Optional[int] = Field(None, ge=1)
     hospitalised: Optional[str] = Field(None, max_length=30)
     outcome: Optional[str] = Field(None, max_length=50)
     reported_by: Optional[str] = Field(None, max_length=100)
-
-    # ── Temporal ──────────────────────────────────────────────────────────────
-    sample_collection_date: Optional[datetime] = None
-    submission_type: Optional[str] = Field("SYNTHETIC", description="SYNTHETIC | REAL | IMPORTED")
 
     # ── Data Integrity ─────────────────────────────────────────────────────────
     is_synthetic: int = Field(default=1)
@@ -110,6 +108,16 @@ class AMRRecordCreate(BaseModel):
     # ─────────────────────────────────────────────────────────────────────────
     # VALIDATORS
     # ─────────────────────────────────────────────────────────────────────────
+
+    @field_validator("sector", mode="before")
+    @classmethod
+    def sanitize_sector_input(cls, v: Any) -> Any:
+        """Sanitizes fuzzy string entries to map cleanly to SectorEnum values."""
+        if isinstance(v, str):
+            clean_v = v.strip().upper()
+            if clean_v in ["HUMAN", "ANIMAL", "ENVIRONMENT"]:
+                return clean_v
+        return v
 
     @field_validator("pathogen_name", mode="before")
     @classmethod
@@ -156,13 +164,15 @@ class AMRRecordCreate(BaseModel):
     @field_validator("classification", mode="before")
     @classmethod
     def normalize_classification(cls, v: Optional[str]) -> Optional[str]:
-        """Normalize resistance classification to standardized MDR/XDR/PDR codes."""
+        """Normalize resistance classification to standardized MDR/XDR/PDR/Unknown codes."""
         if v is None:
             return v
         v_upper = v.strip().upper()
-        valid = {"MDR", "XDR", "PDR", "SUSCEPTIBLE"}
-        if v_upper in valid:
-            return v_upper.capitalize() if v_upper == "SUSCEPTIBLE" else v_upper
+        valid_uppercase = {"MDR", "XDR", "PDR"}
+        if v_upper in valid_uppercase:
+            return v_upper
+        if v_upper in ["SUSCEPTIBLE", "UNKNOWN"]:
+            return v_upper.capitalize()
         return v
 
     @model_validator(mode="after")
@@ -172,14 +182,17 @@ class AMRRecordCreate(BaseModel):
         - HUMAN records: require patient_sex, patient_age_years, clinical_indication
         - ANIMAL records: require animal_species, production_system
         """
-        if self.sector == SectorEnum.HUMAN:
+        # Handle string value checking or SectorEnum checking gracefully
+        sector_str = self.sector.value if hasattr(self.sector, "value") else str(self.sector)
+        
+        if sector_str == "HUMAN":
             missing = [f for f in ["patient_sex", "patient_age_years", "clinical_indication"]
                        if getattr(self, f) is None]
             if missing:
                 raise ValueError(
                     f"Human records require {', '.join(missing)} for GLASS compliance (GAP-AMR 2026-2036)."
                 )
-        elif self.sector == SectorEnum.ANIMAL:
+        elif sector_str == "ANIMAL":
             missing = [f for f in ["animal_species", "production_system"]
                        if getattr(self, f) is None]
             if missing:
