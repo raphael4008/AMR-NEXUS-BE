@@ -1,0 +1,49 @@
+# ── Python ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+
+# ── Virtual environment ──────────────────────────────────
+venv/
+.venv/
+env/
+
+# ── IDE / Editor ─────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ── Environment secrets ──────────────────────────────────
+.env
+*.env.local
+
+# ── Test / Cache artifacts ───────────────────────────────
+.pytest_cache/
+backend/.pytest_cache/
+backend/tests/__pycache__/
+htmlcov/
+.coverage
+*.cover
+
+# ── Dev scratch files ────────────────────────────────────
+fix_tests.py
+test_api_out.txt
+backend_tree.txt
+task.md
+architecture.html
+continue and proceed after ward with its.ini
+
+# ── OS artifacts ─────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Legacy / superseded schemas ──────────────────────────
+database/schema.sql
+database/schema_v1.2.sql
