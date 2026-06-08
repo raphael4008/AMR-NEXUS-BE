@@ -2,8 +2,8 @@
 main.py — AMR-Nexus One Health Platform v2.0 Application Factory
 
 July 14 Rev 2 entry point. Configures:
-  - CORS for independent frontend deployments
-  - Lifespan event: DB connectivity check + version logging on startup
+  - CORS for independent frontend deployments (with local development profiles)
+  - Lifespan event: Automatic schema creation, DB connectivity check + version logging
   - Unified route prefixes via settings.API_V1_STR
   - /health liveness probe for container orchestration
 """
@@ -29,13 +29,26 @@ logger = logging.getLogger("amr_nexus")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Startup: verify DB connectivity and log platform version.
+    Startup: Force compilation of database models and verify DB connectivity.
     Shutdown: (reserved for cleanup hooks).
     """
-    from src.models.base import engine
+    from src.models.base import engine, Base
     from sqlalchemy import text
+    
+    # ── CRITICAL: Import entities so SQLAlchemy registers the tables ──
+    try:
+        # Evaluates entities.py to cleanly append model metadata to the Base instance mapping track
+        from src.models.entities import AMRRecord, Alert, GuidanceBrief
+        logger.info("📦 Core database entities registered successfully.")
+    except Exception as import_exc:
+        logger.warning("⚠️ Could not pre-import entities for create_all fallback: %s", import_exc)
 
     try:
+        # ── Force Schema Compilation ──────────────────────────────────────────
+        # Now that entities models are parsed, SQLAlchemy will physically build them
+        Base.metadata.create_all(bind=engine)
+        
+        # ── Verify Connectivity ───────────────────────────────────────────────
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         logger.info(
@@ -67,15 +80,28 @@ app = FastAPI(
 )
 
 # ── CORS Middleware ───────────────────────────────────────────────────────────────
+
+dev_origins = [
+    "http://localhost:5173",    # Vite dev server loopback port
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",    # Common alternative UI fallback port
+    "http://127.0.0.1:3000",
+]
+
+# Safeguard parsing of production settings and merge dev ports cleanly
+configured_origins = list(settings.FRONTEND_CORS_ORIGINS) if isinstance(settings.FRONTEND_CORS_ORIGINS, (list, tuple)) else []
+allowed_origins = list(set(configured_origins + dev_origins))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.FRONTEND_CORS_ORIGINS,
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # ── Route Mounting ────────────────────────────────────────────────────────────────
+
 app.include_router(auth_router, prefix=settings.API_V1_STR, tags=["Authentication"])
 app.include_router(backbone_router, prefix=settings.API_V1_STR, tags=["Data Backbone"])
 app.include_router(intelligence_router, prefix=settings.API_V1_STR, tags=["AI Dashboard Insights"])
