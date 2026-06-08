@@ -1,0 +1,120 @@
+# Monorepo Branch Track: backend/feature-api-name
+import pytest
+from unittest.mock import MagicMock, patch
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from src.main import app
+from src.models.base import get_db
+from src.models.entities import AMRRecord, Alert, GuidanceBrief
+from src.services.ml_engine.anomaly_detector import AMRAnomalyEngine
+
+client = TestClient(app)
+
+@pytest.fixture
+def mock_claud_client():
+    """Mocks out external Claude API response loops to protect the testing environment from network lag."""
+    with patch("src.services.intelligence.llm_advisory.acompletion") as mock_acompletion:
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "### WHO AWaRe Stewardship Brief\n1. Enforce alternative prescribing patterns."
+        mock_acompletion.return_value = mock_response
+        yield mock_acompletion
+
+@pytest.fixture
+def mock_sms_gateway():
+    """Mocks the Africa's Talking SMS network engine layer."""
+    with patch("src.services.notifications.sms_service.africastalking") as mock_at:
+        mock_sms_instance = MagicMock()
+        mock_sms_instance.send.return_value = {"SMSMessageData": {"Message": "Dispatched successfully to Sandbox"}}
+        mock_at.SMS.return_value = mock_sms_instance
+        yield mock_sms_instance
+
+@pytest.mark.asyncio
+async def test_complete_end_to_end_backend_processing_flow(
+    db_session: Session, 
+    mock_claud_client, 
+    mock_sms_gateway
+):
+    """
+    Executes a complete Integration Test across Component A, B, and C.
+    Validates: Raw Data Upload -> Cleaning -> Storage -> Anomaly Scoring -> LLM Briefing -> SMS Notification.
+    """
+    # 1. Mock incoming synthetic lab payload matching Nicole's data model criteria
+    raw_incoming_payload = [
+        {
+            "sector": "ANIMAL",
+            "pathogen_name": "E. coli",  # Shorthand string to trigger Raph's normalization logic
+            "antimicrobial_agent": "Ciprofloxacin",
+            "county": "IntegrationCounty",
+            "sub_county": None,          # Triggers sub-county modal group imputation
+            "facility_type": "Poultry Farm",
+            "result_value": "R",         # High resistance flag to trigger Naomi's AI anomaly engine
+            "ncbi_tax_id": 562,
+            "sequencing_platform": "Illumina",
+            "is_synthetic": 1
+        }
+    ]
+
+    # 2. Bind FastAPI's dependency injection to our isolated test database session
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    # Bypass authentication by mocking the token dependency
+    from src.core.security import get_current_user_token, TokenData
+    app.dependency_overrides[get_current_user_token] = lambda: TokenData(username="test", role="National Coordinator")
+
+    # Mock get_db globally so background tasks get the test session
+    import src.api.backbone
+    original_get_db = src.api.backbone.get_db
+    src.api.backbone.get_db = lambda: iter([db_session])
+
+    try:
+        # 3. Post data payload to Raph's ingestion route gateway
+        with patch("src.api.backbone.run_downstream_evaluations"):
+            response = client.post("/api/v1/backbone/ingest/whonet", json=raw_incoming_payload)
+        
+        assert response.status_code == 202
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["processed_records"] == 1
+    finally:
+        src.api.backbone.get_db = original_get_db
+    assert response.json()["failed_critical"] == 0
+
+    # 4. Verify data cleaning and string normalization rules executed smoothly
+    saved_record = db_session.query(AMRRecord).filter(AMRRecord.county == "IntegrationCounty").first()
+    assert saved_record is not None
+    assert saved_record.pathogen_name == "Escherichia coli"
+    assert saved_record.data_quality_score > 0.80
+
+    # 5. Invoke Naomi's downstream AI pipeline worker synchronously for testing evaluation
+    ai_engine = AMRAnomalyEngine()
+    mock_bg_tasks = MagicMock()
+    
+    db_session.refresh(saved_record)
+    ai_engine.execute_analysis_pipeline(
+        record_ids=[saved_record.id], 
+        db_session=db_session, 
+        bg_tasks=mock_bg_tasks
+    )
+
+    # 6. Assert that the record was correctly flagged and committed as a system alert
+    triggered_alert = db_session.query(Alert).filter(Alert.amr_isolate_record_id == saved_record.id).first()
+    assert triggered_alert is not None
+    assert triggered_alert.status == "PENDING"
+
+    # 7. Execute the combined Claude Advisory & SMS generation task synchronously
+    db_session.refresh(triggered_alert)
+    await ai_engine._process_advisory_and_sms(alert_id=triggered_alert.id, db_session=db_session)
+
+    # 8. Assert that the database transaction completed end-to-end smoothly
+    db_session.refresh(triggered_alert)
+    assert triggered_alert.status == "NOTIFIED"
+
+    # Confirm Claude's role-scoped advisory markdown was successfully saved to the database
+    saved_brief = db_session.query(GuidanceBrief).filter(GuidanceBrief.alert_id == triggered_alert.id).first()
+    assert saved_brief is not None
+    assert "WHO AWaRe" in saved_brief.content_markdown
+
+    # Clear dependency overrides to prevent test contamination
+    app.dependency_overrides.clear()
