@@ -9,7 +9,8 @@ jobs:
   check-reviews:
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: read
+      contents: read       # Required to see repository context
+      pull-requests: write # Required for GitHub API to process PR review endpoints
     steps:
       - name: Check for approvals
         uses: actions/github-script@v7
