@@ -16,7 +16,12 @@ ROLE_COUNTY_CLINICIAN = "County Clinician"
 
 # ── Crypto context ──────────────────────────────────────────────────────────────
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/token", auto_error=False)
+
+# ── Dummy hash for constant-time login responses ────────────────────────────────
+# Pre-computed once at startup. Always run verify_password() even when the user
+# is not found so that attackers cannot enumerate valid usernames via timing.
+_DUMMY_HASH: str = pwd_context.hash("amr-nexus-dummy-constant-prevents-timing-oracle-Xk9#")
 
 
 class TokenData(BaseModel):
@@ -47,20 +52,31 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 async def get_current_user_token(
     token: str = Depends(oauth2_scheme),
 ) -> TokenData:
+    """
+    Validates the Bearer JWT and returns the TokenData payload.
+    Raises HTTP 401 on any failure — no bypass, no fallback user.
+    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    if not token:
+        raise credentials_exception
+
     try:
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
         )
         username: str = payload.get("sub")
         role: str = payload.get("role")
+
         if username is None:
             raise credentials_exception
+
         return TokenData(username=username, role=role)
+
     except JWTError:
         raise credentials_exception
 
@@ -83,13 +99,13 @@ class RoleChecker:
     def __init__(self, allowed_roles: List[str]):
         self.allowed_roles = allowed_roles
 
-    def __call__(
+    async def __call__(
         self, current_user: TokenData = Depends(get_current_user_token)
     ) -> TokenData:
-        # National Coordinator has platform-wide superuser access (global systems bypass)
+        # National Coordinator has platform-wide superuser access
         if current_user.role == ROLE_NATIONAL_COORDINATOR:
             return current_user
-            
+
         if current_user.role not in self.allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -98,7 +114,5 @@ class RoleChecker:
                     f"Your role: {current_user.role}"
                 ),
             )
-            
-        # If the claims match 'County Veterinarian' (or similar allowed scoped role), 
-        # we enforce scoped resource validation limits by verifying the role passes.
+
         return current_user

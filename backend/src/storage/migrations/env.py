@@ -40,8 +40,10 @@ def run_migrations_offline() -> None:
     Calls to context.execute() here emit the given string to the
     script output.
 
+    NOTE: Use the sync URL from alembic.ini (postgresql://), NOT the async
+    asyncpg URL from settings.DATABASE_URI — Alembic requires sync drivers.
     """
-    url = settings.DATABASE_URI
+    url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -59,9 +61,13 @@ def run_migrations_online() -> None:
     In this scenario we need to create an Engine
     and associate a connection with the context.
 
+    NOTE: Do NOT override sqlalchemy.url with settings.DATABASE_URI here —
+    that would inject the async asyncpg:// URL which breaks sync Alembic.
+    The alembic.ini already has the correct sync postgresql:// URL.
     """
     configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = settings.DATABASE_URI
+    # Ensure we use the sync URL from alembic.ini, not the async one from settings
+    configuration["sqlalchemy.url"] = config.get_main_option("sqlalchemy.url")
     connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",
@@ -75,6 +81,7 @@ def run_migrations_online() -> None:
 
         with context.begin_transaction():
             context.run_migrations()
+
 
 
 if context.is_offline_mode():

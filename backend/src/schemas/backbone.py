@@ -5,7 +5,7 @@
 import uuid
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, date
 from src.models.entities import SectorEnum
 
 
@@ -68,6 +68,32 @@ class AMRRecordCreate(BaseModel):
     outcome: Optional[str] = Field(None, max_length=50)
     reported_by: Optional[str] = Field(None, max_length=100)
 
+    # ── Facility / Sample Identifiers ─────────────────────────────────────────
+    sample_id: Optional[str] = Field(None, max_length=100, description="Lab or field sample ID")
+    facility_name: Optional[str] = Field(None, max_length=150)
+    facility_id: Optional[str] = Field(None, max_length=50)
+
+    # ── Extended Patient Demographics ────────────────────────────────────────
+    patient_age_group: Optional[str] = Field(None, max_length=20, description="e.g., 'Pediatric', 'Adult'")
+    ward_type: Optional[str] = Field(None, max_length=50)
+    prior_antibiotic_exposure: Optional[bool] = None
+    infection_origin: Optional[str] = Field(None, max_length=20, description="e.g., 'Community', 'Hospital'")
+
+    # ── Data Quality ─────────────────────────────────────────────────────────
+    data_quality_score: Optional[float] = Field(1.0, ge=0.0, le=1.0)
+
+    # ── Interoperability / GLASS / WHONET ────────────────────────────────────
+    glass_specimen_code: Optional[str] = Field(None, max_length=10)
+    glass_pathogen_code: Optional[str] = Field(None, max_length=10)
+    glass_antibiotic_code: Optional[str] = Field(None, max_length=10)
+    whonet_org_code: Optional[str] = Field(None, max_length=20)
+    dhis2_org_unit: Optional[str] = Field(None, max_length=50)
+    dhis2_data_element: Optional[str] = Field(None, max_length=50)
+
+    # ── Genomic Metadata (extended) ───────────────────────────────────────────
+    sequencing_date: Optional[date] = None
+    coverage_depth: Optional[float] = Field(None, ge=0.0)
+
     # ── Data Integrity ─────────────────────────────────────────────────────────
     is_synthetic: int = Field(default=1)
 
@@ -108,6 +134,57 @@ class AMRRecordCreate(BaseModel):
     # ─────────────────────────────────────────────────────────────────────────
     # VALIDATORS
     # ─────────────────────────────────────────────────────────────────────────
+
+    @model_validator(mode="before")
+    @classmethod
+    def pre_normalize_fields(cls, values: Any) -> Any:
+        """
+        Pre-validation normalization applied before individual field validators:
+        - Coerces sample_collection_date strings (date-only or datetime) to datetime.
+        - Normalizes sir_result word forms → single char (backup for field_validator).
+        - Normalizes sector to uppercase (backup for field_validator).
+        """
+        if not isinstance(values, dict):
+            return values
+
+        # ── sample_collection_date: accept date-only string '2024-01-15' ──
+        raw_date = values.get("sample_collection_date")
+        if isinstance(raw_date, str):
+            raw_date = raw_date.strip()
+            try:
+                if "T" in raw_date or " " in raw_date:
+                    # Full datetime string — let Pydantic handle it
+                    pass
+                else:
+                    # Date-only string: append midnight time
+                    values["sample_collection_date"] = f"{raw_date}T00:00:00"
+            except Exception:
+                pass  # Let Pydantic raise a proper ValidationError
+
+        # ── sir_result normalisation ──
+        sir = values.get("sir_result")
+        if isinstance(sir, str):
+            _SIR_MAP = {
+                "resistant": "R", "susceptible": "S", "intermediate": "I",
+                "sensitive": "S", "nonsusceptible": "R",
+            }
+            mapped = _SIR_MAP.get(sir.lower().strip())
+            if mapped:
+                values["sir_result"] = mapped
+
+        # ── sector normalisation ──
+        sector = values.get("sector")
+        if isinstance(sector, str):
+            sector_map = {
+                "human": "HUMAN", "animal": "ANIMAL",
+                "environment": "ENVIRONMENT", "food_chain": "FOOD_CHAIN",
+                "food chain": "FOOD_CHAIN",
+            }
+            normalized = sector_map.get(sector.lower().strip())
+            if normalized:
+                values["sector"] = normalized
+
+        return values
 
     @field_validator("sector", mode="before")
     @classmethod

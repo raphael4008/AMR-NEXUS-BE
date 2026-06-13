@@ -1,39 +1,47 @@
-# ── Web Framework ──────────────────────────────────────────────────────────────
-fastapi>=0.100.0
-uvicorn[standard]>=0.23.0
-python-multipart>=0.0.6
+# AMR-Nexus Backend Dependencies
+# Generated from active venv — 2026-06-12
+# Install: pip install -r requirements.txt
 
-# ── Database & ORM ─────────────────────────────────────────────────────────────
-sqlalchemy>=2.0.0
-alembic>=1.13.0
-psycopg2-binary>=2.9.7
+# ── Web Framework ─────────────────────────────────────────────────────────────
+fastapi==0.136.1
+uvicorn[standard]==0.46.0
+starlette==1.0.0
+python-multipart==0.0.28
+httptools==0.7.1
+websockets==16.0
+watchfiles==1.1.1
 
-# ── Configuration & Validation ────────────────────────────────────────────────
-pydantic-settings>=2.3.0
-python-dotenv>=1.0.0
+# ── Rate Limiting ─────────────────────────────────────────────────────────────
+slowapi==0.1.9
+limits==5.8.0
 
-# ── Security / Auth ────────────────────────────────────────────────────────────
-python-jose[cryptography]>=3.3.0
-passlib[bcrypt]>=1.7.4
+# ── Database — Async (FastAPI) ────────────────────────────────────────────────
+sqlalchemy==2.0.49
+asyncpg==0.31.0
+
+# ── Database — Sync (Alembic migrations only) ─────────────────────────────────
+psycopg2-binary==2.9.12
+alembic==1.18.4
+
+# ── Task Queue ────────────────────────────────────────────────────────────────
+arq==0.28.0
+redis==5.3.1
+hiredis==3.4.0
+
+# ── Data Validation ───────────────────────────────────────────────────────────
+pydantic==2.13.4
+pydantic-core==2.46.4
+pydantic-settings==2.14.1
+
+# ── Security & Authentication ─────────────────────────────────────────────────
+python-jose==3.5.0
+passlib==1.7.4
 bcrypt==4.0.1
+cryptography==48.0.0
 
-# ── Data Processing ────────────────────────────────────────────────────────────
-pandas>=2.0.0
-numpy>=1.26.0
+# ── Async Utilities ───────────────────────────────────────────────────────────
+anyio==4.13.0
+sniffio==1.3.1
 
-# ── Machine Learning — Component B ───────────────────────────────────────────
-scikit-learn>=1.3.0
-prophet>=1.1.5
-shap>=0.45.0
-joblib>=1.3.0
-
-# ── LLM Advisory — Component C ───────────────────────────────────────────────
-anthropic>=0.28.0
-httpx>=0.27.0
-litellm>=1.0.0
-
-# ── Notifications ─────────────────────────────────────────────────────────────
-africastalking>=1.2.3
-
-# ── Event Streaming ───────────────────────────────────────────────────────────
-confluent-kafka>=2.2.0
+# ── Click (CLI) ───────────────────────────────────────────────────────────────
+click==8.4.1

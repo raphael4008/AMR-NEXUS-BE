@@ -1,49 +1,53 @@
-import { useState, useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import AppLayout from './components/layout/AppLayout';
-import NationalOverview from './pages/NationalOverview';
-import NationalMap from './pages/NationalMap';
-import NationalTrends from './pages/NationalTrends';
-import NationalAlerts from './pages/NationalAlerts';
-import NationalGuidance from './pages/NationalGuidance';
-import CountyOverview from './pages/CountyOverview';
-import CountyAlerts from './pages/CountyAlerts';
-import CountyGuidance from './pages/CountyGuidance';
-
-const queryClient = new QueryClient();
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import Layout from './components/Layout/Layout';
+import RequireAuth from './components/RequireAuth';
+import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
+import Predict from './pages/Predict';
+import Analytics from './pages/Analytics';
+import History from './pages/History';
+import Alerts from './pages/Alerts';
+import Reports from './pages/Reports';
+import Settings from './pages/Settings';
+import Compare from './pages/Compare';
+import PathogenExplorer from './pages/PathogenExplorer';
+import BulkImport from './pages/BulkImport';
+import CompareAnalytics from './pages/CompareAnalytics';
+import DataQuality from './pages/DataQuality';
 
 export default function App() {
-  const [role, setRole] = useState('national');
-  const [darkMode, setDarkMode] = useState(true);
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', darkMode);
-  }, [darkMode]);
-
   return (
-    <QueryClientProvider client={queryClient}>
+    <BrowserRouter>
       <Routes>
-        <Route element={
-          <AppLayout
-            role={role}
-            onToggleRole={() => setRole(r => r === 'national' ? 'county' : 'national')}
-            darkMode={darkMode}
-            onToggleDark={() => setDarkMode(d => !d)}
-          />
-        }>
-          <Route path="/" element={<Navigate to="/national" replace />} />
-          {/* Pass darkMode to ALL pages that contain the map */}
-          <Route path="/national" element={<NationalOverview role={role} darkMode={darkMode} />} />
-          <Route path="/national/map" element={<NationalMap role={role} darkMode={darkMode} />} />
-          <Route path="/national/trends" element={<NationalTrends />} />
-          <Route path="/national/alerts" element={<NationalAlerts role={role} />} />
-          <Route path="/national/guidance" element={<NationalGuidance />} />
-          <Route path="/county" element={<CountyOverview role={role} />} />
-          <Route path="/county/alerts" element={<CountyAlerts role={role} />} />
-          <Route path="/county/guidance" element={<CountyGuidance />} />
+        {/* Public route — login page */}
+        <Route path="/login" element={<Login />} />
+
+        {/* Protected routes — wrapped in auth guard */}
+        <Route
+          path="/"
+          element={
+            <RequireAuth>
+              <Layout />
+            </RequireAuth>
+          }
+        >
+          <Route index element={<Dashboard />} />
+          <Route path="predict" element={<Predict />} />
+          <Route path="analytics" element={<Analytics />} />
+          <Route path="history" element={<History />} />
+          <Route path="alerts" element={<Alerts />} />
+          <Route path="reports" element={<Reports />} />
+          <Route path="settings" element={<Settings />} />
+          <Route path="compare" element={<Compare />} />
+          <Route path="pathogen-explorer" element={<PathogenExplorer />} />
+          <Route path="bulk-import" element={<BulkImport />} />
+          <Route path="compare-analytics" element={<CompareAnalytics />} />
+          <Route path="data-quality" element={<DataQuality />} />
         </Route>
+
+        {/* Catch-all: redirect unknown paths to home */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </QueryClientProvider>
+    </BrowserRouter>
   );
 }
