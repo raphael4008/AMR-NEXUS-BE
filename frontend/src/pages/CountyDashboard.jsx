@@ -1,222 +1,145 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { 
-  Bug, 
-  AlertTriangle, 
-  Pill,
-  MapPin,
-  TrendingUp,
-} from 'lucide-react';
-import { KPICard } from '../components/ui/KPICard';
-import { DataCard } from '../components/ui/DataCard';
-import AlertDetailModal from '../components/alerts/AlertDetailModal';
-import { fetchSummary, fetchAlerts } from '../api/endpoints';
+﻿import { useEffect, useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import {
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+} from 'recharts';
+import { ChartBarIcon, ArrowTrendingUpIcon, MapPinIcon, BellIcon } from '@heroicons/react/24/outline';
+import api from '../api/client';
+import CountyHeatmap from '../components/analytics/CountyHeatmap';
 
-export default function CountyDashboard({ role }) {
-  const [selectedAlert, setSelectedAlert] = useState(null);
-  const [modalOpen, setModalOpen] = useState(false);
+export default function CountyDashboard() {
+  const { user } = useAuth();
+  const [summary, setSummary] = useState(null);
+  const [trendData, setTrendData] = useState([]);
+  const [pathogenData, setPathogenData] = useState([]);
+  const [recentAlerts, setRecentAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const { data: summary } = useQuery({
-    queryKey: ['summary', role],
-    queryFn: fetchSummary,
-  });
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (user.county) params.append('county', user.county);
+    const qs = params.toString();
 
-  const { data: alerts } = useQuery({
-    queryKey: ['alerts', role],
-    queryFn: fetchAlerts,
-  });
+    Promise.all([
+      api.getSummary(qs),
+      api.getMDRTrend(6, qs),
+      api.getByPathogen(10, qs),
+      api.getAlerts(qs),
+    ])
+      .then(([summ, trend, pathogens, alerts]) => {
+        setSummary(summ);
+        setTrendData(trend);
+        setPathogenData(pathogens);
+        setRecentAlerts(alerts.slice(0, 5));
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error('CountyDashboard fetch error:', err);
+        setError('Could not load data.');
+        setLoading(false);
+      });
+  }, [user.county]);
 
-  const trendData = [18, 19, 20, 22, 23, 28, 32, 34];
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'];
+  if (loading) return <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600" /></div>;
+  if (error) return <div className="text-center py-8 text-red-500">{error}</div>;
 
   return (
-    <div className="space-y-6">
-      {/* County Header - Updated to use theme variables */}
-      <div className="bg-[var(--bg-card)] border border-[var(--border-glass)] rounded-[24px] p-5 shadow-lg transition-all">
-        <div className="flex items-start justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
-              <MapPin className="w-6 h-6 text-white" strokeWidth={1.5} />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-[var(--text-primary)]">
-                Kiambu County
-              </h1>
-              <p className="text-sm text-[var(--text-muted)]">
-                County Veterinarian View · Poultry & Livestock AMR Surveillance
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-              Poultry Focus
-            </span>
-            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-[var(--bg-primary)]/50 text-[var(--text-muted)] border border-[var(--border)]">
-              Synthetic Data
-            </span>
-          </div>
-        </div>
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex flex-wrap justify-between items-center gap-4">
+        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+          <MapPinIcon className="h-6 w-6 text-primary-600" />
+          County Dashboard – {user.county}
+        </h1>
+        <span className="text-xs text-gray-400 bg-gray-100 px-3 py-1 rounded-full">
+          {user.role === 'national' ? 'National' : 'County'} view
+        </span>
+      </div>
 
-        <div className="flex gap-4 mt-6 flex-wrap">
-          {[
-            { name: 'Ruiru', isolates: 48, resistance: '34%' },
-            { name: 'Thika', isolates: 22, resistance: '18%' },
-            { name: 'Gatundu', isolates: 14, resistance: '12%' },
-          ].map((sub) => (
-            <div key={sub.name} className="bg-[var(--bg-primary)]/30 rounded-xl px-4 py-3 border border-[var(--border-glass)]">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{sub.name}</p>
-              <div className="flex gap-3 mt-1">
-                <span className="text-sm text-[var(--text-primary)]">
-                  <strong>{sub.isolates}</strong> isolates
-                </span>
-                <span className="text-sm font-semibold text-amber-500">{sub.resistance}</span>
-              </div>
-            </div>
-          ))}
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md p-5 border border-white/50">
+          <p className="text-sm text-gray-500">Total Records</p>
+          <p className="text-2xl font-bold text-gray-900">{summary?.total_records?.toLocaleString() || 0}</p>
+        </div>
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md p-5 border border-white/50">
+          <p className="text-sm text-gray-500">MDR Rate</p>
+          <p className="text-2xl font-bold text-red-600">{summary?.mdr_rate || 0}%</p>
+        </div>
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md p-5 border border-white/50">
+          <p className="text-sm text-gray-500">Anomalies Detected</p>
+          <p className="text-2xl font-bold text-yellow-600">{summary?.anomaly_count || 0}</p>
+        </div>
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md p-5 border border-white/50">
+          <p className="text-sm text-gray-500">Active County</p>
+          <p className="text-2xl font-bold text-primary-600">1</p>
         </div>
       </div>
 
-      {/* KPI Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <KPICard
-          title="Poultry Isolates"
-          value={84}
-          icon={Bug}
-          trend="up"
-          trendValue={15}
-          colorClass="agriculture"
-          subtitle="Across 3 monitored farms"
-        />
-        <KPICard
-          title="Active Alerts"
-          value={2}
-          icon={AlertTriangle}
-          trend="up"
-          trendValue={100}
-          colorClass="alert"
-          subtitle="Requiring immediate action"
-        />
-        <KPICard
-          title="FQ Resistance Rate"
-          value={34}
-          icon={Pill}
-          trend="up"
-          trendValue={89}
-          colorClass="agriculture"
-          subtitle="Fluoroquinolone in poultry"
-        />
-      </div>
-
-      {/* Main Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <div className="bg-[var(--bg-card)] border border-[var(--border-glass)] rounded-[24px] p-5 shadow-lg transition-all">
-            <div className="flex items-center gap-2 mb-4">
-              <TrendingUp className="w-4 h-4 text-amber-500" strokeWidth={1.5} />
-              <h3 className="font-semibold text-sm text-[var(--text-primary)]">
-                Resistance Trend — Fluoroquinolone · E. coli
-              </h3>
-            </div>
-            
-            <svg width="100%" height="200" className="mb-2">
-              <defs>
-                <linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#F59E0B" stopOpacity="0.3" />
-                  <stop offset="100%" stopColor="#F59E0B" stopOpacity="0.02" />
-                </linearGradient>
-              </defs>
-              {(() => {
-                const max = Math.max(...trendData);
-                const min = Math.min(...trendData);
-                const range = max - min || 1;
-                const padding = 20;
-                const w = 100 / (trendData.length - 1);
-                
-                const points = trendData.map((v, i) => 
-                  `${i * w}%,${padding + (1 - (v - min) / range) * (180 - padding * 2)}`
-                ).join(' ');
-                
-                return (
-                  <>
-                    <polygon points={`0,200 ${points} 100,200`} fill="url(#trendGrad)" />
-                    <polyline points={points} fill="none" stroke="#F59E0B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                    <circle 
-                      cx={`${(trendData.length - 1) * w}%`} 
-                      cy={padding + (1 - (trendData[trendData.length - 1] - min) / range) * (180 - padding * 2)} 
-                      r="4" fill="var(--bg-card)" stroke="#F59E0B" strokeWidth="2.5" 
-                    />
-                  </>
-                );
-              })()}
-            </svg>
-            
-            <div className="flex justify-between px-1">
-              {months.map((m, i) => (
-                <span key={i} className={`text-[10px] ${i >= 5 ? 'text-red-500 font-semibold' : 'text-[var(--text-muted)]'}`}>
-                  {m}
-                </span>
-              ))}
-            </div>
-
-            <div className="mt-4 p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex gap-3">
-              <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" strokeWidth={1.5} />
-              <div>
-                <p className="text-sm font-semibold text-red-600 dark:text-red-400">
-                  Anomaly Detected — Sharp Resistance Increase
-                </p>
-                <p className="text-xs text-[var(--text-muted)] mt-1">
-                  Fluoroquinolone resistance in poultry E. coli rose from 22% to 34% in the last 3 months.
-                </p>
-              </div>
-            </div>
-          </div>
+      {/* Charts Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Trend Chart */}
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md p-5 border border-white/50">
+          <h3 className="text-md font-semibold text-gray-800 mb-2 flex items-center gap-2">
+            <ArrowTrendingUpIcon className="h-5 w-5 text-primary-600" />
+            MDR Trend (6 months)
+          </h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={trendData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="month" />
+              <YAxis domain={[0, 100]} unit="%" />
+              <Tooltip formatter={(v) => `${v}%`} />
+              <Line type="monotone" dataKey="rate" stroke="#3b82f6" strokeWidth={2} name="MDR Rate (%)" dot={{ r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
 
-        <div>
-          <div className="bg-[var(--bg-card)] border border-[var(--border-glass)] rounded-[24px] p-5 shadow-lg transition-all">
-            <div className="flex items-center gap-2 mb-4">
-              <AlertTriangle className="w-4 h-4 text-red-500" strokeWidth={1.5} />
-              <h3 className="font-semibold text-sm text-[var(--text-primary)]">
-                Local Alerts
-              </h3>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-500/10 text-red-500 border border-red-500/20">
-                {alerts?.length || 0}
-              </span>
-            </div>
-            
-            {alerts?.map(alert => (
-              <button
-                key={alert.id}
-                onClick={() => {
-                  setSelectedAlert(alert.id);
-                  setModalOpen(true);
-                }}
-                className="w-full text-left p-3 rounded-xl mb-2 transition-all hover:translate-x-1 bg-red-500/5 border-l-4 border-red-500"
-              >
-                <p className="text-sm font-semibold text-[var(--text-primary)]">
-                  {alert.pathogen}
-                </p>
-                <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                  {alert.summary}
-                </p>
-                <p className="text-[10px] text-[var(--text-muted)] mt-1">
-                  {alert.subCounty} · Risk: {alert.riskScore}
-                </p>
-              </button>
+        {/* Pathogen Resistance Chart */}
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md p-5 border border-white/50">
+          <h3 className="text-md font-semibold text-gray-800 mb-2 flex items-center gap-2">
+            <ChartBarIcon className="h-5 w-5 text-primary-600" />
+            Resistance by Pathogen
+          </h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={pathogenData} layout="vertical" margin={{ left: 40 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis type="number" domain={[0, 100]} unit="%" />
+              <YAxis type="category" dataKey="name" width={80} />
+              <Tooltip formatter={(v) => `${v}%`} />
+              <Bar dataKey="resistance" fill="#10b981" name="Resistance (%)" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* County Heatmap (filtered to this county) */}
+      <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md border border-white/50 p-5">
+        <h3 className="text-md font-semibold text-gray-800 mb-2 flex items-center gap-2">
+          <MapPinIcon className="h-5 w-5 text-primary-600" />
+          Geographic Distribution
+        </h3>
+        <CountyHeatmap county={user.county} />
+      </div>
+
+      {/* Recent Alerts */}
+      {recentAlerts.length > 0 && (
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md border border-white/50 p-5">
+          <h3 className="text-md font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <BellIcon className="h-5 w-5 text-yellow-500" />
+            Recent Alerts in Your County
+          </h3>
+          <div className="space-y-3">
+            {recentAlerts.map((alert) => (
+              <div key={alert.id} className="border-l-4 border-yellow-500 pl-3 py-2">
+                <p className="text-sm font-medium">{alert.message}</p>
+                <p className="text-xs text-gray-500">{new Date(alert.timestamp).toLocaleString()}</p>
+              </div>
             ))}
           </div>
         </div>
-      </div>
-
-      <AlertDetailModal
-        alertId={selectedAlert}
-        role={role}
-        open={modalOpen}
-        onClose={() => {
-          setModalOpen(false);
-          setSelectedAlert(null);
-        }}
-      />
+      )}
     </div>
   );
 }
