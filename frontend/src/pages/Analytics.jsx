@@ -27,34 +27,43 @@ export default function Analytics() {
   const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (filters.startDate) params.append('start_date', filters.startDate);
-      if (filters.endDate) params.append('end_date', filters.endDate);
-      if (filters.county) params.append('county', filters.county);
-      if (filters.pathogen) params.append('pathogen', filters.pathogen);
-      const qs = params.toString();
+      // Build params as object (client.js expects plain object, not query string)
+      const params = {};
+      if (filters.startDate) params.start_date = filters.startDate;
+      if (filters.endDate)   params.end_date   = filters.endDate;
+      if (filters.county)    params.county      = filters.county;
+      if (filters.pathogen)  params.pathogen    = filters.pathogen;
 
-      const [summ, trend, path, sect, counties, pathogens] = await Promise.all([
-        api.getSummary(qs),
-        api.getMDRTrend(12, qs),
-        api.getByPathogen(20, qs),
-        api.getBySector(qs),
-        api.getTopCounties(20, qs),
-        api.getByPathogen(100, qs),
+      const [summRes, trendRes, pathRes, sectRes, countiesRes, pathogensRes] = await Promise.allSettled([
+        api.getSummary(params),
+        api.getMDRTrend(12, params),
+        api.getByPathogen(20, params),
+        api.getBySector(params),
+        api.getTopCounties(20, params),
+        api.getByPathogen(100, params),
       ]);
+
+      // Safely unwrap each result
+      const summ     = summRes.status     === 'fulfilled' ? (summRes.value.data     ?? {}) : {};
+      const trend    = trendRes.status    === 'fulfilled' ? (trendRes.value.data?.series ?? trendRes.value.data ?? []) : [];
+      const path     = pathRes.status     === 'fulfilled' ? (Array.isArray(pathRes.value.data?.data) ? pathRes.value.data.data : Array.isArray(pathRes.value.data) ? pathRes.value.data : []) : [];
+      const sect     = sectRes.status     === 'fulfilled' ? (Array.isArray(sectRes.value.data)    ? sectRes.value.data    : []) : [];
+      const counties = countiesRes.status === 'fulfilled' ? (Array.isArray(countiesRes.value.data) ? countiesRes.value.data : []) : [];
+      const pathogens= pathogensRes.status=== 'fulfilled' ? (Array.isArray(pathogensRes.value.data?.data) ? pathogensRes.value.data.data : Array.isArray(pathogensRes.value.data) ? pathogensRes.value.data : []) : [];
+
       setSummary(summ);
-      // normaliseTrend() now returns a plain array — use directly
-      setTrendData(Array.isArray(trend) ? trend : []);
-      setPathogenData(path);
-      setSectorData(sect);
-      setCountyList(counties.map(c => c.county));
-      setPathogenList(pathogens.map(p => p.name));
+      setTrendData(trend.map(t => ({ ...t, rate: parseFloat(((t.resistance_rate ?? t.rate ?? 0) * 100).toFixed(1)), month: (t.date ?? t.month ?? '').slice(0, 7) })));
+      setPathogenData(path.map(p => ({ name: p.pathogen_name ?? p.name ?? 'Unknown', resistance: p.count ?? p.resistance ?? 0 })));
+      setSectorData(sect.map(s => ({ name: s.sector_name ?? s.sector ?? s.name ?? 'Unknown', value: s.count ?? s.value ?? 0 })));
+      setCountyList(counties.map(c => c.county ?? c.county_name ?? '').filter(Boolean));
+      setPathogenList(pathogens.map(p => p.pathogen_name ?? p.name ?? '').filter(Boolean));
     } catch (err) {
-      console.error(err);
+      console.error('Analytics fetch error:', err);
     } finally {
       setLoading(false);
     }
   }, [filters]);
+
 
   useEffect(() => {
     fetchAll();

@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import api from '../api/client';
@@ -27,10 +27,22 @@ export default function PathogenExplorer() {
     setSearchParams(params, { replace: true });
   }, [selected, startDate, endDate, county, setSearchParams]);
 
-  // Load pathogens list
+  // Load pathogens list and county list on mount
   useEffect(() => {
-    api.getByPathogen(100).then(data => setPathogens(data.map(p => p.name)));
-    api.getTopCounties(100).then(data => setCounties(data.map(c => c.county)));
+    // getByPathogen returns { status, data: [{pathogen_name, count}] }
+    api.getByPathogen(100)
+      .then(res => {
+        const raw = Array.isArray(res.data?.data) ? res.data.data : Array.isArray(res.data) ? res.data : [];
+        setPathogens(raw.map(p => p.pathogen_name ?? p.name ?? '').filter(Boolean));
+      })
+      .catch(() => {});
+    // getTopCounties returns normalized [{county, rate, alert_count}]
+    api.getTopCounties(100)
+      .then(res => {
+        const raw = Array.isArray(res.data) ? res.data : [];
+        setCounties(raw.map(c => c.county).filter(Boolean));
+      })
+      .catch(() => {});
   }, []);
 
   // Fetch data when selected pathogen changes
@@ -39,22 +51,49 @@ export default function PathogenExplorer() {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const params = new URLSearchParams();
-        if (startDate) params.append('start_date', startDate);
-        if (endDate) params.append('end_date', endDate);
-        if (county) params.append('county', county);
-        const qs = params.toString();
+        const params = {};
+        if (startDate) params.start_date = startDate;
+        if (endDate)   params.end_date   = endDate;
+        if (county)    params.county     = county;
+
+        // Fetch all records for this pathogen and derive resistance by antibiotic class
+        const res = await api.getPredictions(1000, 0, { ...params, pathogen_name: selected });
+        const records = Array.isArray(res.data) ? res.data : [];
+
         // Resistance by antibiotic class
-        const heatmap = await api.getHeatmap({ limit: 2000 });
-        const data = heatmap
-          .filter(r => (r.pathogen_name ?? '').toLowerCase() === selected.toLowerCase())
-          .map(r => ({ antibiotic_class: r.antibiotic_name, resistance: r.intensity_weight * 100 }));
-        setResistanceData(data);
-        // Trend (using pathogen-specific endpoint)
-        const trendResp = await api.getMDRTrend(12, qs);
-        setTrendData(trendResp?.series ?? []);
+        const classMap = {};
+        records.forEach(r => {
+          const cls = r.antibiotic_class ?? r.antibiotic_name ?? 'Unknown';
+          if (!classMap[cls]) classMap[cls] = { total: 0, resistant: 0 };
+          classMap[cls].total++;
+          if (r.mdr_flag || r.sir_result === 'R') classMap[cls].resistant++;
+        });
+        const resistanceArr = Object.entries(classMap).map(([cls, v]) => ({
+          antibiotic_class: cls,
+          resistance: v.total > 0 ? parseFloat((v.resistant / v.total * 100).toFixed(1)) : 0,
+        })).sort((a, b) => b.resistance - a.resistance);
+        setResistanceData(resistanceArr);
+
+        // MDR trend — group by month
+        const monthMap = {};
+        records.forEach(r => {
+          const month = (r.timestamp ?? '').slice(0, 7);
+          if (!month) return;
+          if (!monthMap[month]) monthMap[month] = { total: 0, resistant: 0 };
+          monthMap[month].total++;
+          if (r.mdr_flag || r.sir_result === 'R') monthMap[month].resistant++;
+        });
+        const trend = Object.entries(monthMap)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([month, v]) => ({
+            month,
+            rate: v.total > 0 ? parseFloat((v.resistant / v.total * 100).toFixed(1)) : 0,
+          }));
+        setTrendData(trend);
       } catch (err) {
-        console.error(err);
+        console.error('[PathogenExplorer]', err);
+        setResistanceData([]);
+        setTrendData([]);
       } finally {
         setLoading(false);
       }

@@ -87,7 +87,7 @@ class HeatmapGeoJsonResponse(BaseModel):
     Aggregated from live isolate records with real DB geo coordinates.
     Fields align with the updated dataset column definitions (v1.4).
     """
-    location: GeoCentroidLocation
+    location: Dict[str, Any] = Field(..., description="Location dict with county, sub_county, latitude, longitude")
     intensity_weight: float = Field(..., ge=0.0, le=1.0, description="Normalized heatmap weight (0–1)")
     pathogen_profile: str = Field(..., description="Primary pathogen detected at this location")
     resistance_level: str = Field(..., description="Dominant SIR result: S | I | R")
@@ -95,6 +95,8 @@ class HeatmapGeoJsonResponse(BaseModel):
     resistance_percent: Optional[float] = Field(None, description="Human-readable resistance rate")
     sector: Optional[str] = Field(None, description="HUMAN | ANIMAL | ENVIRONMENT")
     sample_count: Optional[int] = Field(None, description="Number of isolates at this point")
+    county: Optional[str] = None    # Flat alias for client-side grouping
+    sector_lower: Optional[str] = None
 
 
 # ── Gene Intelligence ─────────────────────────────────────────────────────────
@@ -157,12 +159,25 @@ class AlertGuidance(BaseModel):
 # ── Trends Response Schema ────────────────────────────────────────────────────
 
 class TrendPoint(BaseModel):
-    date: str
+    date:            str
     resistance_rate: float
-    anomaly_flag: bool
+    anomaly_flag:    bool
+    forecast:        bool = False   # True for statistically projected future points
 
 
 class TrendsResponse(BaseModel):
     """Response for GET /intelligence/trends."""
     series: List[TrendPoint]
 
+
+# ── Risk Summary Schema ───────────────────────────────────────────────────────────
+
+class RiskSummaryResponse(BaseModel):
+    """Response for GET /intelligence/risk-summary."""
+    total_alerts:          int
+    avg_anomaly_score:     float
+    max_hotspot_magnitude: float
+    critical_count:        int    # anomaly_score >= 0.8
+    high_count:            int    # 0.5 <= anomaly_score < 0.8
+    medium_count:          int    # anomaly_score < 0.5
+    top_risk_counties:     List[Dict[str, Any]] = Field(default_factory=list)

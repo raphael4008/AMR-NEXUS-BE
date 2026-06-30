@@ -37,43 +37,64 @@ export default function Reports() {
     setLoading(true);
     try {
       const { start, end } = getDateParams();
-      const query = new URLSearchParams();
-      if (start) query.append('start_date', start.toISOString().split('T')[0]);
-      if (end) query.append('end_date', end.toISOString().split('T')[0]);
-      const qs = query.toString();
+      const params = {};
+      if (start) params.start_date = start.toISOString().split('T')[0];
+      if (end)   params.end_date   = end.toISOString().split('T')[0];
 
       let data = {};
       switch (reportType) {
-        case 'mdr_summary':
-          data = await api.getSummary(qs);
+        case 'mdr_summary': {
+          const res = await api.getSummary(params);
+          data = res.data;
           break;
-        case 'anomaly_report':
-          const predictions = await api.getPredictions(1000, 0, qs);
-          const anomalies = predictions.filter(p => p.anomaly_detected);
+        }
+        case 'anomaly_report': {
+          const res = await api.getPredictions(1000, 0, params);
+          const predictions = Array.isArray(res.data) ? res.data : [];
+          const anomalies = predictions.filter(p => p.anomaly_flag || p.anomaly_detected);
           data = {
             total_predictions: predictions.length,
             anomaly_count: anomalies.length,
-            anomaly_rate: anomalies.length / predictions.length * 100 || 0,
+            anomaly_rate: predictions.length > 0 ? (anomalies.length / predictions.length * 100) : 0,
             recent_anomalies: anomalies.slice(0, 10),
           };
           break;
-        case 'sector_comparison':
-          data = { sectors: await api.getBySector(qs) };
-          break;
-        case 'county_ranking':
-          data = { counties: await api.getTopCounties(10, qs) };
-          break;
-        case 'pathogen_wise':
-          data = { pathogens: await api.getByPathogen(20, qs) };
-          break;
-        case 'trend': {
-          // getMDRTrend now returns a plain normalised array [{month, rate, ...}]
-          const trendArr = await api.getMDRTrend(12, qs);
-          data = { trend: Array.isArray(trendArr) ? trendArr : [] };
+        }
+        case 'county_ranking': {
+          // county ranking uses heatmap aggregated by county
+          const res = await api.getHeatmapCoordinates({ ...params, limit: 500 });
+          const heatmap = Array.isArray(res.data) ? res.data : [];
+          // Aggregate by county
+          const countyMap = {};
+          heatmap.forEach(pt => {
+            const c = pt.location?.county ?? pt.county ?? 'Unknown';
+            if (!countyMap[c]) countyMap[c] = { county: c, total: 0, high: 0 };
+            countyMap[c].total++;
+            if ((pt.resistance_level ?? '').toLowerCase() === 'high') countyMap[c].high++;
+          });
+          const counties = Object.values(countyMap).map(c => ({
+            county: c.county,
+            rate: c.total > 0 ? parseFloat((c.high / c.total * 100).toFixed(1)) : 0,
+          })).sort((a, b) => b.rate - a.rate).slice(0, 10);
+          data = { counties };
           break;
         }
-        default:
-          data = await api.getSummary(qs);
+        case 'pathogen_wise': {
+          const res = await api.getByPathogen(20);
+          const raw = Array.isArray(res.data?.data) ? res.data.data : Array.isArray(res.data) ? res.data : [];
+          data = { pathogens: raw.map(p => ({ name: p.pathogen_name ?? p.name, resistance: p.count ?? p.resistance ?? 0 })) };
+          break;
+        }
+        case 'trend': {
+          const res = await api.getMDRTrend(12, params);
+          const raw = res.data?.series ?? [];
+          data = { trend: raw.map(t => ({ month: t.date?.slice(0, 7) ?? '', rate: parseFloat((t.resistance_rate * 100).toFixed(1)) })) };
+          break;
+        }
+        default: {
+          const res = await api.getSummary(params);
+          data = res.data;
+        }
       }
       setReportData(data);
     } catch (err) {
@@ -139,11 +160,11 @@ export default function Reports() {
   const scheduleReport = async (email, schedule) => {
     setScheduling(true);
     try {
-      await api.emailReport({ email, format: 'pdf', type: reportType, schedule });
+      await api.scheduleReport({ email, format: 'pdf', type: reportType, schedule });
       alert(`Report scheduled ${schedule}ly to ${email}.`);
       setShowScheduleModal(false);
     } catch (err) {
-      alert('Failed to schedule. Ensure backend endpoint exists.');
+      alert('Failed to schedule. Check backend connectivity.');
     } finally {
       setScheduling(false);
     }

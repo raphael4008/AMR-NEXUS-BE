@@ -16,7 +16,7 @@ ROLE_COUNTY_CLINICIAN = "County Clinician"
 
 # ── Crypto context ──────────────────────────────────────────────────────────────
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/token", auto_error=False)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/token", auto_error=False)
 
 # ── Dummy hash for constant-time login responses ────────────────────────────────
 # Pre-computed once at startup. Always run verify_password() even when the user
@@ -26,7 +26,9 @@ _DUMMY_HASH: str = pwd_context.hash("amr-nexus-dummy-constant-prevents-timing-or
 
 class TokenData(BaseModel):
     username: Optional[str] = None
-    role: Optional[str] = None
+    role:     Optional[str] = None
+    county:   Optional[str] = None   # Populated for County Veterinarian RBAC scoping
+    name:     Optional[str] = None   # User display name
 
 
 # ── Password helpers ─────────────────────────────────────────────────────────────
@@ -70,12 +72,14 @@ async def get_current_user_token(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
         )
         username: str = payload.get("sub")
-        role: str = payload.get("role")
+        role:     str = payload.get("role")
+        county:   str = payload.get("county")  # Present for County Veterinarian users
+        name:     str = payload.get("name")    # User display name
 
         if username is None:
             raise credentials_exception
 
-        return TokenData(username=username, role=role)
+        return TokenData(username=username, role=role, county=county, name=name)
 
     except JWTError:
         raise credentials_exception

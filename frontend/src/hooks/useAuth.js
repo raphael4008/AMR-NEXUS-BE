@@ -1,38 +1,12 @@
-import { useState, useEffect } from 'react';
-import api from '../api/client';
+/**
+ * hooks/useAuth.js — Thin re-export of AuthContext
+ *
+ * FIXED: Previously contained a hardcoded mock user { name: 'John Doe' }
+ * and an incomplete logout that only removed 'user' from localStorage
+ * (leaving the auth token behind, so the session persisted after logout).
+ *
+ * Now simply re-exports from AuthContext so ALL components share one
+ * consistent auth state regardless of which import path they use.
+ */
 
-export function useAuth() {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  const fetchUser = async () => {
-    try {
-      // Replace with actual /me endpoint when ready
-      // For now, read from localStorage or mock
-      const stored = localStorage.getItem('user');
-      if (stored) {
-        setUser(JSON.parse(stored));
-      } else {
-        // Mock user – replace with API call
-        setUser({ name: 'John Doe', email: 'john.doe@amrnexus.org', role: 'epidemiologist' });
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const logout = () => {
-    localStorage.removeItem('user');
-    setUser(null);
-    // Call backend logout endpoint if needed
-    window.location.href = '/login';
-  };
-
-  useEffect(() => {
-    fetchUser();
-  }, []);
-
-  return { user, loading, logout };
-}
+export { useAuth } from '../contexts/AuthContext';

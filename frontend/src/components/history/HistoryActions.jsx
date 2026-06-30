@@ -1,17 +1,16 @@
-import api from '../../api/client';
 import { TrashIcon, ShareIcon } from '@heroicons/react/24/outline';
 import { toast } from 'react-hot-toast';
+import api from '../../api/client';
 
 export default function HistoryActions({ recordId, onDelete, onShare }) {
   const handleDelete = async () => {
     if (window.confirm('Permanently delete this prediction? This action cannot be undone.')) {
       try {
-        console.warn('Delete not implemented on backend; record removed from local view only.');
-        if (!response.ok) throw new Error('Delete failed');
+        await api.deleteRecord(recordId);
         toast.success('Prediction deleted');
         if (onDelete) onDelete(recordId);
       } catch (err) {
-        toast.error('Could not delete');
+        toast.error('Could not delete: ' + (err.response?.data?.detail ?? err.message));
       }
     }
   };

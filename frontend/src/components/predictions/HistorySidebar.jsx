@@ -4,8 +4,11 @@ import api from '../../api/client';
 export default function HistorySidebar({ onSelect }) {
   const [predictions, setPredictions] = useState([]);
   useEffect(() => {
-    api.getPredictions(5, 0).then(setPredictions);
+    api.getPredictions(5, 0)
+      .then(res => setPredictions(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setPredictions([]));
   }, []);
+
   return (
     <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-md border border-white/50 p-4 mt-6">
       <h4 className="text-sm font-semibold text-gray-800 mb-2">Recent predictions</h4>

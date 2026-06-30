@@ -18,36 +18,36 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-  const fetchDashboardData = async () => {
-  setLoading(true);
-  try {
-    // 1. Fetch data with better error handling
-    const [summaryData, predictions, trendData, counties, healthData] = await Promise.all([
-      api.getSummary().catch(() => null),        // Returns null on failure
-      api.getPredictions(100, 0).catch(() => []), // Returns empty array on failure
-      api.getMDRTrend(6).catch(() => []),
-      api.getTopCounties(3).catch(() => []),
-      api.health().catch(() => ({ status: 'offline' })),
-    ]);
+    const fetchDashboardData = async () => {
+      setLoading(true);
+      try {
+        const [summaryRes, predictionsRes, trendRes, countiesRes, healthRes] = await Promise.allSettled([
+          api.getSummary(),
+          api.getPredictions(100, 0),
+          api.getMDRTrend(6),
+          api.getTopCounties(3),
+          api.health(),
+        ]);
 
-    // 2. Defensive assignment (Ensuring arrays)
-    setSummary(summaryData);
-    
-    // Safety check: Ensure predictions is an array before calling filter
-    const safePredictions = Array.isArray(predictions) ? predictions : [];
-    setAnomalies(safePredictions.filter(p => p.anomaly_detected).slice(0, 5));
-    
-    setTrend(Array.isArray(trendData) ? trendData : []);
-    setTopCounties(Array.isArray(counties) ? counties : []);
-    setHealth(healthData);
-    
-    if (safePredictions.length > 0) setLastPrediction(safePredictions[0].timestamp);
-  } catch (err) {
-    console.error('Dashboard data error:', err);
-  } finally {
-    setLoading(false);
-  }
-};
+        const summaryData    = summaryRes.status    === 'fulfilled' ? (summaryRes.value.data    ?? null) : null;
+        const predictions    = predictionsRes.status === 'fulfilled' ? (Array.isArray(predictionsRes.value.data) ? predictionsRes.value.data : []) : [];
+        const trendRaw       = trendRes.status      === 'fulfilled' ? (trendRes.value.data?.series ?? trendRes.value.data ?? []) : [];
+        const countiesRaw    = countiesRes.status   === 'fulfilled' ? (Array.isArray(countiesRes.value.data) ? countiesRes.value.data : []) : [];
+        const healthData     = healthRes.status     === 'fulfilled' ? (healthRes.value.data       ?? null) : null;
+
+        setSummary(summaryData);
+        setAnomalies(predictions.filter(p => p.anomaly_detected || p.anomaly_flag).slice(0, 5));
+        setTrend(trendRaw.map(t => ({ ...t, rate: parseFloat(((t.resistance_rate ?? t.rate ?? 0) * 100).toFixed(1)) })));
+        setTopCounties(countiesRaw);
+        setHealth(healthData);
+        if (predictions.length > 0) setLastPrediction(predictions[0].timestamp);
+      } catch (err) {
+        console.error('Dashboard data error:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchDashboardData();
   }, []);
 

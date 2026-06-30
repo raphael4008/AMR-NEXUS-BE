@@ -1,340 +1,297 @@
 /**
- * api/client.js — AMR-Nexus Single Authoritative API Client
+ * api/client.js — AMR-Nexus Unified API Client v2.2
  *
- * Architecture:
- *  - ONE Axios instance, base URL from VITE_API_BASE_URL env variable
- *  - Auto-injects Authorization Bearer token from localStorage
- *  - 401 response → clears stored token, redirects to /login
- *  - All service functions map to REAL backend routes
- *  - Derived functions (top counties, by sector, data quality) are
- *    computed client-side from real endpoint responses — no ghost routes
+ * Single source of truth for all backend communication.
+ * - Vite proxy: /api → http://localhost:8080 (configured in vite.config.js)
+ * - baseURL: /api/v1
+ * - Auto-injects Authorization: Bearer <token> on every request
+ * - 401 auto-logout: clears localStorage + redirects to /login
+ * - All 27 backend endpoints mapped as named methods
  */
 
 import axios from 'axios';
 
-// ── Axios instance ─────────────────────────────────────────────────────────────
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
-const API_V1   = `${BASE_URL}/api/v1`;
+// ── Axios Instance ────────────────────────────────────────────────────────────
 
-const axiosClient = axios.create({
-  baseURL: API_V1,
+const axiosInstance = axios.create({
+  baseURL: '/api/v1',
   headers: { 'Content-Type': 'application/json' },
-  timeout: 30_000,
 });
 
-// ── Request interceptor: attach JWT ───────────────────────────────────────────
-axiosClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('amr_token');
+// ── Request Interceptor: Inject Bearer Token ──────────────────────────────────
+
+axiosInstance.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
 
-// ── Response interceptor: handle 401 globally ─────────────────────────────────
-axiosClient.interceptors.response.use(
-  (response) => {
-    // If the response is already an object (axios auto-parsed JSON), return it
-    if (typeof response.data === 'object') return response;
-    
-    // If it's a string that doesn't look like JSON, throw an error
-    if (typeof response.data === 'string' && !response.data.trim().startsWith('{')) {
-        throw new Error("API returned non-JSON response");
-    }
-    return response;
-  },
+// ── Response Interceptor: 401 Auto-Logout ────────────────────────────────────
+
+axiosInstance.interceptors.response.use(
+  (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Token expired or invalid — clear storage and redirect to login
-      localStorage.removeItem('amr_token');
-      localStorage.removeItem('amr_user');
+      localStorage.clear();
+      // Avoid redirect loop on login page
       if (!window.location.pathname.includes('/login')) {
         window.location.href = '/login';
       }
     }
-    // Normalise error message for UI consumption
-    const detail = error.response?.data?.detail;
-    const message = typeof detail === 'string'
-      ? detail
-      : `HTTP ${error.response?.status ?? 'Network Error'}`;
-    return Promise.reject(new Error(message));
+    return Promise.reject(error);
   }
 );
 
-// ── Response normalisation helpers ────────────────────────────────────────────
-/**
- * Normalises the dashboard summary so legacy field names still work
- * across components that were built against the old schema.
- *
- * Backend →                Frontend alias
- * total_isolates_scanned → total_records
- * active_hotspots_detected → anomaly_count, active_hotspots
- * resistance_breakdown.resistance_percent → mdr_rate
- * national_compliance_index → compliance_index
- */
-function normaliseSummary(data) {
-  if (!data) return data;
-  console.log("DEBUG: Backend response:", data);
-  return {
-    ...data,
-    // Aliases for components using old field names
-    total_records: data.total_isolates_scanned ?? 0,
-    anomaly_count: data.active_hotspots_detected ?? 0,
-    active_hotspots: data.active_hotspots_detected ?? 0,
-    mdr_rate: data.resistance_breakdown?.resistance_percent ?? 0,
-    compliance_index: data.national_compliance_index ?? 0,
-  };
-}
+// ── Helper: Build query string from object ────────────────────────────────────
 
-/**
- * Normalises a trend series so that camelCase and snake_case both work.
- * Backend: { date, resistance_rate, anomaly_flag }
- */
-function normaliseTrend(data) {
-  if (!data?.series) return data;
-  return {
-    ...data,
-    series: data.series.map((point) => ({
-      ...point,
-      // camelCase aliases for Recharts components
-      date: point.date,
-      resistanceRate: point.resistance_rate,
-      anomalyFlag: point.anomaly_flag,
-    })),
-  };
-}
+const buildQuery = (params = {}) => {
+  const clean = Object.fromEntries(
+    Object.entries(params).filter(([, v]) => v !== null && v !== undefined && v !== '')
+  );
+  const qs = new URLSearchParams(clean).toString();
+  return qs ? `?${qs}` : '';
+};
 
-/**
- * Derives top-counties list from heatmap response.
- * Groups by county, sums sample counts, sorts descending.
- */
-function deriveTopCounties(heatmapData, limit = 10) {
-  const map = {};
-  for (const row of heatmapData) {
-    const county = row.location?.county ?? row.county;
-    if (!county) continue;
-    if (!map[county]) {
-      map[county] = { county, rate: 0, count: 0 };
-    }
-    map[county].count  += row.sample_count ?? 1;
-    map[county].rate    = Math.max(map[county].rate, row.intensity_weight ?? 0);
-  }
-  return Object.values(map)
-    .sort((a, b) => b.count - a.count)
-    .slice(0, limit);
-}
+// ── API Methods ───────────────────────────────────────────────────────────────
 
-/**
- * Derives sector breakdown from heatmap response.
- */
-function deriveBySector(heatmapData) {
-  const map = {};
-  for (const row of heatmapData) {
-    const sector = row.sector ?? 'UNKNOWN';
-    if (!map[sector]) map[sector] = { name: sector, value: 0, count: 0 };
-    map[sector].count += row.sample_count ?? 1;
-    map[sector].value  = Math.round(
-      ((map[sector].value * (map[sector].count - 1)) + (row.intensity_weight ?? 0) * 100)
-      / map[sector].count
-    );
-  }
-  return Object.values(map);
-}
-
-/**
- * Derives pathogen resistance list from top_resistant_pathogens summary field.
- * Backend: [{ pathogen, count }]
- * Returns: [{ name, count, resistance }]
- */
-function deriveByPathogen(summaryData) {
-  return (summaryData?.top_resistant_pathogens ?? []).map((p) => ({
-    ...p,
-    name: p.pathogen,
-    resistance: p.count,
-  }));
-}
-
-
-// ── Real API service functions ─────────────────────────────────────────────────
 export const api = {
 
-  // ── Auth ──────────────────────────────────────────────────────────────────
+  // ── Auth ────────────────────────────────────────────────────────────────────
+
   /**
-   * Login with username + password.
-   * Backend expects application/x-www-form-urlencoded (OAuth2PasswordRequestForm).
-   * Stores token in localStorage on success.
+   * POST /auth/token
+   * Params: URLSearchParams with grant_type, username, password
+   * Returns: { access_token, token_type }
    */
-  login: async (username, password) => {
-    const form = new URLSearchParams();
-    form.append('username', username);
-    form.append('password', password);
-    const { data } = await axiosClient.post('/token', form, {
+  login: (formData) =>
+    axiosInstance.post('/auth/token', formData.toString(), {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    });
-    // Persist token for request interceptor
-    localStorage.setItem('amr_token', data.access_token);
-    return data;
-  },
+    }),
 
-  logout: () => {
-    localStorage.removeItem('amr_token');
-    localStorage.removeItem('amr_user');
-    window.location.href = '/login';
-  },
+  /**
+   * POST /auth/register
+   * Body: { username, name, email, password, role, county }
+   * Returns: { message }
+   */
+  register: (data) => axiosInstance.post('/auth/register', data),
 
-  // ── Health ────────────────────────────────────────────────────────────────
-  health: async () => {
-    const { data } = await axios.get(`${BASE_URL}/health`);
-    return data;
-  },
+  // ── User Profile ────────────────────────────────────────────────────────────
 
-  // ── Intelligence — Dashboard Summary ──────────────────────────────────────
-  /** GET /api/v1/intelligence/dashboard/summary */
-  getSummary: async (queryString = '') => {
-    const { data } = await axiosClient.get(
-      `/intelligence/dashboard/summary${queryString ? `?${queryString}` : ''}`
-    );
-    return normaliseSummary(data);
-  },
+  /**
+   * GET /users/me
+   * Returns: { username, name, email, role, county, is_active }
+   */
+  getMe: () => axiosInstance.get('/users/me'),
 
-  // ── Intelligence — Trends ─────────────────────────────────────────────────
-  /** GET /api/v1/intelligence/trends */
-  getMDRTrend: async (months = 6, queryString = '') => {
-    const params = new URLSearchParams(queryString);
-    params.set('months', months);
-    const { data } = await axiosClient.get(`/intelligence/trends?${params}`);
-    return normaliseTrend(data);
-  },
+  /**
+   * PUT /users/me
+   * Body: { name?, email? }
+   * Returns: { username, name, email, role, county, is_active }
+   */
+  updateMe: (data) => axiosInstance.put('/users/me', data),
 
-  // alias used by some components
-  getForecast: async (queryString = '') => {
-    const { data } = await axiosClient.get(
-      `/intelligence/trends${queryString ? `?${queryString}` : ''}`
-    );
-    return normaliseTrend(data);
-  },
+  /**
+   * GET /users/me/preferences
+   * Returns: { anomaly_alerts, high_mdr_alerts, weekly_report, retention_days, report_format, report_schedule }
+   */
+  getPreferences: () => axiosInstance.get('/users/me/preferences'),
 
-  // ── Intelligence — Heatmap (raw) ──────────────────────────────────────────
-  /** GET /api/v1/intelligence/heatmap */
-  getHeatmap: async ({ county, sector, limit = 500 } = {}) => {
-    const params = new URLSearchParams();
-    if (county) params.set('county', county);
-    if (sector) params.set('sector', sector);
-    params.set('limit', limit);
-    const { data } = await axiosClient.get(`/intelligence/heatmap?${params}`);
-    return data;
-  },
+  /**
+   * PUT /users/me/preferences
+   * Body: { anomaly_alerts, high_mdr_alerts, weekly_report, retention_days, report_format, report_schedule }
+   */
+  updatePreferences: (data) => axiosInstance.put('/users/me/preferences', data),
 
-  // ── Derived: Top Counties (client-computed from heatmap) ──────────────────
-  getTopCounties: async (limit = 5, queryString = '') => {
-    const heatmap = await api.getHeatmap({ limit: 2000 });
-    return deriveTopCounties(heatmap, limit);
-  },
+  // ── Analytics / Intelligence ────────────────────────────────────────────────
 
-  // ── Derived: By Sector (client-computed from heatmap) ────────────────────
-  getBySector: async (queryString = '') => {
-    const heatmap = await api.getHeatmap({ limit: 2000 });
-    return deriveBySector(heatmap);
-  },
+  /**
+   * GET /analytics/summary
+   * Returns FLAT object: { total_isolates_scanned, active_hotspots_detected,
+   *   national_compliance_index, resistance_breakdown, recent_anomalies[],
+   *   top_resistant_pathogens[], last_updated, total_records, mdr_rate,
+   *   anomaly_count, active_hotspots, compliance_index, active_counties }
+   */
+  getSummary: (params = {}) =>
+    axiosInstance.get(`/analytics/summary${buildQuery(params)}`),
 
-  // ── Derived: By Pathogen (from summary top_resistant_pathogens) ───────────
-  getByPathogen: async (limit = 10, queryString = '') => {
-    const summary = await api.getSummary(queryString);
-    return deriveByPathogen(summary).slice(0, limit);
-  },
+  /**
+   * GET /analytics/mdr_trend?months=12&forecast=false&county=...
+   * Returns: { series: [ { date, resistance_rate, anomaly_flag, forecast } ] }
+   * NOTE: Unwrap with res.data.series
+   */
+  getMDRTrend: (months = 12, params = {}) =>
+    axiosInstance.get(`/analytics/mdr_trend${buildQuery({ months, ...params })}`),
 
-  // ── Derived: County MDR (heatmap with county filter) ─────────────────────
-  getCountyMDR: async (queryString = '') => {
-    const params = new URLSearchParams(queryString);
-    return api.getHeatmap({ county: params.get('county'), limit: 1000 });
-  },
+  /**
+   * GET /analytics/by_pathogen?limit=10
+   * Returns: { status: "success", data: [ { pathogen_name, count } ] }
+   * NOTE: Unwrap with res.data.data
+   */
+  getByPathogen: (limit = 10) =>
+    axiosInstance.get(`/analytics/by_pathogen${buildQuery({ limit })}`),
 
-  // ── Derived: Data Quality (from summary compliance index) ─────────────────
-  getDataQuality: async () => {
-    const summary = await api.getSummary();
-    return {
-      compliance_index: summary.national_compliance_index,
-      total_records: summary.total_isolates_scanned,
-      quality_score: summary.national_compliance_index,
-      clean_records: Math.round(summary.total_isolates_scanned * summary.national_compliance_index),
-    };
-  },
+  /**
+   * GET /intelligence/heatmap?county=...&sector=...&limit=500
+   * Returns FLAT array: [ { location: {county, sub_county, latitude, longitude},
+   *   intensity_weight, pathogen_profile, resistance_level, classification,
+   *   resistance_percent, sector, sample_count } ]
+   */
+  getHeatmapCoordinates: (params = {}) =>
+    axiosInstance.get(`/intelligence/heatmap${buildQuery(params)}`),
 
-  // ── Intelligence — Alerts ─────────────────────────────────────────────────
-  /** GET /api/v1/intelligence/alerts */
-  getAlerts: async (role = '') => {
-    const params = role ? `?role=${role}` : '';
-    const { data } = await axiosClient.get(`/intelligence/alerts${params}`);
-    return data;
-  },
+  /**
+   * GET /intelligence/risk-summary
+   * Returns: { total_alerts, avg_anomaly_score, max_hotspot_magnitude,
+   *   critical_count, high_count, medium_count, top_risk_counties[] }
+   */
+  getRiskSummary: () => axiosInstance.get('/intelligence/risk-summary'),
 
-  /** GET /api/v1/intelligence/alerts/:id */
-  getAlertDetail: async (alertId) => {
-    const { data } = await axiosClient.get(`/intelligence/alerts/${alertId}`);
-    return data;
-  },
+  // ── Alerts ──────────────────────────────────────────────────────────────────
 
-  /** GET /api/v1/intelligence/alerts/:id/explanation */
-  getAlertExplanation: async (alertId) => {
-    const { data } = await axiosClient.get(`/intelligence/alerts/${alertId}/explanation`);
-    return data;
-  },
+  /**
+   * GET /alerts?role=...&county=...
+   * Returns FLAT array: [ { id, pathogen, drug_class, county, sub_county,
+   *   risk_score, summary, triggered_at, anomaly_type, status, sector,
+   *   antibiotic_name, anomaly_score } ]
+   */
+  getAlerts: (params = {}) =>
+    axiosInstance.get(`/alerts${buildQuery(params)}`),
 
-  /** GET /api/v1/intelligence/alerts/:id/guidance */
-  getAlertGuidance: async (alertId, role = '') => {
-    const params = role ? `?role=${role}` : '';
-    const { data } = await axiosClient.get(`/intelligence/alerts/${alertId}/guidance${params}`);
-    return data;
-  },
+  /**
+   * GET /intelligence/alerts/{alert_id}
+   * Returns single alert object (same fields as list item)
+   */
+  getAlertDetail: (alertId) =>
+    axiosInstance.get(`/intelligence/alerts/${alertId}`),
 
-  // ── Records ───────────────────────────────────────────────────────────────
-  /** GET /api/v1/records */
-  getPredictions: async (limit = 50, skip = 0, queryString = '') => {
-    const params = new URLSearchParams(queryString);
-    params.set('limit', limit);
-    params.set('skip', skip);
-    const { data } = await axiosClient.get(`/records?${params}`);
-    return data;
+  /**
+   * GET /intelligence/alerts/{alert_id}/explanation
+   * Returns: { plain_text_summary, contributors: [{ factor, contribution_percent }] }
+   */
+  getAlertExplanation: (alertId) =>
+    axiosInstance.get(`/intelligence/alerts/${alertId}/explanation`),
+
+  /**
+   * GET /intelligence/alerts/{alert_id}/guidance?role=...
+   * Returns: { summary_text, recommendations[], action_checklist[], references[] }
+   */
+  getAlertGuidance: (alertId, role) =>
+    axiosInstance.get(`/intelligence/alerts/${alertId}/guidance${buildQuery({ role })}`),
+
+  // ── Records / Predictions ───────────────────────────────────────────────────
+
+  /**
+   * GET /predictions?limit=50&skip=0&county=...&pathogen_name=...&sir_result=...&sector=...
+   * Returns FLAT array of AMR record objects
+   */
+  getPredictions: (limit = 50, skip = 0, params = {}) =>
+    axiosInstance.get(`/predictions${buildQuery({ limit, skip, ...params })}`),
+
+  /**
+   * GET /records/{record_id}
+   * Returns full AMR record with all fields
+   */
+  getRecord: (recordId) => axiosInstance.get(`/records/${recordId}`),
+
+  /**
+   * DELETE /records/{record_id}
+   * Returns: { status, record_id, deleted_at }
+   */
+  deleteRecord: (recordId) => axiosInstance.delete(`/records/${recordId}`),
+
+  /**
+   * POST /records/bulk/
+   * Body: array of AMRRecordCreate objects (up to 10,000)
+   * Returns: { status, processed_records, failed_critical, record_ids[], task_queued, message }
+   */
+  bulkIngest: (records) => axiosInstance.post('/records/bulk/', records),
+
+  // ── Reports ─────────────────────────────────────────────────────────────────
+
+  /**
+   * POST /reports/schedule
+   * Body: { email, format: "pdf"|"csv"|"xlsx", type: "weekly"|"monthly"|"custom", schedule }
+   * Returns: { status, report_id, email, format, type, schedule, created_at }
+   */
+  scheduleReport: (data) => axiosInstance.post('/reports/schedule', data),
+
+  /**
+   * GET /reports/schedule
+   * Returns FLAT array: [ { report_id, email, format, type, schedule, status, created_at } ]
+   */
+  getScheduledReports: () => axiosInstance.get('/reports/schedule'),
+
+  // ── Decision Support ─────────────────────────────────────────────────────────
+
+  /**
+   * POST /decision-support/{record_id}
+   * Returns: { record_id, status, task_id, guidance, role_target, generated_at }
+   */
+  triggerDecisionSupport: (recordId) =>
+    axiosInstance.post(`/decision-support/${recordId}`),
+
+  /**
+   * GET /decision-support/{record_id}
+   * Returns: { record_id, status, task_id, guidance, role_target, generated_at }
+   */
+  getDecisionSupport: (recordId) =>
+    axiosInstance.get(`/decision-support/${recordId}`),
+
+  // ── Health ──────────────────────────────────────────────────────────────────
+
+  /**
+   * GET /health  (no /api/v1 prefix — raw endpoint)
+   * Returns: { status: "healthy", service, version }
+   */
+  health: () => axios.get('/health'),
+
+  // ── Convenience helpers (no dedicated backend route) ─────────────────────────
+
+  /**
+   * getTopCounties(limit)
+   * Derives top counties from GET /intelligence/risk-summary → top_risk_counties[]
+   * Returns Axios response whose .data is an array of { county, avg_score, alert_count }
+   */
+  getTopCounties: async (limit = 5) => {
+    const res = await axiosInstance.get('/intelligence/risk-summary');
+    const counties = Array.isArray(res.data?.top_risk_counties)
+      ? res.data.top_risk_counties.slice(0, limit)
+      : [];
+    // Normalize shape: add .county and .rate for TopCounties component
+    const normalised = counties.map(c => ({
+      county:      c.county,
+      rate:        parseFloat((c.avg_score * 100).toFixed(1)),
+      alert_count: c.alert_count,
+    }));
+    return { ...res, data: normalised };
   },
 
   /**
-   * POST /api/v1/records/bulk/
-   * Accepts an array of AMRRecordCreate-shaped objects.
-   * Returns BulkIngestResponse { status, processed_records, record_ids, task_queued }
+   * getBySector(params)
+   * Aggregates sector breakdown from GET /intelligence/heatmap
+   * Returns Axios response whose .data is an array of { sector, count }
    */
-  bulkIngest: async (records) => {
-    const { data } = await axiosClient.post('/records/bulk/', records);
-    return data;
+  getBySector: async (params = {}) => {
+    const res = await axiosInstance.get(`/intelligence/heatmap${buildQuery({ ...params, limit: 1000 })}`);
+    const rows = Array.isArray(res.data) ? res.data : [];
+    const sectorMap = {};
+    rows.forEach(pt => {
+      const s = pt.sector ?? 'UNKNOWN';
+      sectorMap[s] = (sectorMap[s] || 0) + 1;
+    });
+    const data = Object.entries(sectorMap).map(([sector, count]) => ({ sector, count }));
+    return { ...res, data };
   },
 
-  // Legacy alias used by BulkImport.jsx / predictionStore
-  submitPrediction: async (record) => {
-    return api.bulkIngest([record]);
-  },
-
-  // ── Client-side Export (replaces ghost /export/predictions endpoint) ───────
-  exportRecordsCSV: async () => {
-    const records = await api.getPredictions(10_000, 0);
-    const headers = ['record_id', 'pathogen_code', 'county', 'mdr_flag', 'mdr_probability', 'sector', 'timestamp'];
-    const rows = records.map((r) =>
-      [r.record_id, r.pathogen_code, r.county, r.mdr_flag, r.mdr_probability, r.sector, r.timestamp].join(',')
-    );
-    const csv = [headers.join(','), ...rows].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = `amr_records_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  },
-
-  // ── Stub: Ghost endpoints removed — emit console warning if called ─────────
-  emailReport:   () => Promise.reject(new Error('Email reports not implemented')),
-  getComments:   () => Promise.resolve([]),
-  addComment:    () => Promise.resolve({}),
-  getMe:         () => Promise.resolve(JSON.parse(localStorage.getItem('amr_user') || 'null')),
-  getRecommendations: async () => api.getAlerts(),
+  /**
+   * submitPrediction(recordData)
+   * Convenience wrapper: ingests a single AMR record via POST /records/bulk/
+   * Returns the bulk ingest response.
+   */
+  submitPrediction: (recordData) =>
+    axiosInstance.post('/records/bulk/', [recordData]),
 };
 
 export default api;

@@ -1,21 +1,25 @@
-import api from '../../api/client';
 // src/components/dashboard/QuickActions.jsx
 import { Link } from 'react-router-dom';
 import { ChartBarIcon, DocumentArrowDownIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
+import api from '../../api/client';
 
 export default function QuickActions() {
   const handleExportCSV = async () => {
     try {
-      await api.exportRecordsCSV();
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const res = await api.getPredictions(10000, 0);
+      const rows = Array.isArray(res.data) ? res.data : [];
+      if (rows.length === 0) { alert('No records to export.'); return; }
+      const keys = Object.keys(rows[0]);
+      const csv  = [keys.join(','), ...rows.map(r => keys.map(k => JSON.stringify(r[k] ?? '')).join(','))].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
       a.href = url;
       a.download = `amr_export_${new Date().toISOString().slice(0,10)}.csv`;
       a.click();
-      a.remove();
+      URL.revokeObjectURL(url);
     } catch (err) {
-      alert('Export failed');
+      alert('Export failed: ' + (err.response?.data?.detail ?? err.message));
     }
   };
 

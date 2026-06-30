@@ -25,12 +25,16 @@ from src.models.base import Base
 # ── Authentication Table ──────────────────────────────────────────────────────
 class User(Base):
     __tablename__ = "users"
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    username = Column(String(50), unique=True, index=True, nullable=False)
-    email = Column(String(100), unique=True, index=True, nullable=False)
+    id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    username        = Column(String(50), unique=True, index=True, nullable=False)
+    email           = Column(String(100), unique=True, index=True, nullable=True)
     hashed_password = Column(String(200), nullable=False)
-    role = Column(String(50), nullable=False, default="National Coordinator")
-    is_active = Column(Boolean, default=True)
+    role            = Column(String(50), nullable=False, default="National Coordinator")
+    is_active       = Column(Boolean, default=True)
+    # ── Extended profile fields ──
+    name            = Column(String(150), nullable=True)          # Display name
+    county          = Column(String(50), nullable=True, index=True)  # RBAC county scoping
+    preferences     = Column(JSON, nullable=True, default=dict)   # Notification + retention preferences
 # ── Enumerations ─────────────────────────────────────────────────────────────────
 
 class SectorEnum(enum.Enum):
@@ -228,6 +232,9 @@ class AMRRecord(Base):
     alert_triggered      = Column(Boolean, default=False)
     alert_timestamp      = Column(DateTime(timezone=True), nullable=True)
 
+    # ── Soft Delete ──
+    deleted_at = Column(DateTime(timezone=True), nullable=True, index=True)
+
     # ── Relationships ────────────────────────────────────────────────────────
     resistance_gene_links = relationship("IsolateResistanceGene", back_populates="record", cascade="all, delete-orphan")
     alerts                = relationship("Alert", back_populates="record", cascade="all, delete-orphan")
@@ -294,13 +301,14 @@ class Alert(Base):
     sample_date           = Column(DateTime(timezone=True), nullable=False)
     detection_timestamp   = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
 
-    anomaly_score      = Column(Numeric, nullable=False) 
-    hotspot_magnitude  = Column(Numeric, nullable=False) 
-    feature_importance = Column(JSON, nullable=True)     
-    status             = Column(String(50), default="PENDING", nullable=False)  
+    anomaly_score      = Column(Numeric, nullable=False)
+    hotspot_magnitude  = Column(Numeric, nullable=False, default=0.0)
+    feature_importance = Column(JSON, nullable=True)
+    status             = Column(String(50), default="PENDING", nullable=False)
 
-    record   = relationship("AMRRecord", back_populates="alerts")
-    guidance = relationship("GuidanceBrief", back_populates="alert")
+    record     = relationship("AMRRecord", back_populates="alerts")
+    amr_record = relationship("AMRRecord", foreign_keys=[amr_isolate_record_id], viewonly=True, primaryjoin="Alert.amr_isolate_record_id == AMRRecord.id")
+    guidance   = relationship("GuidanceBrief", back_populates="alert")
 
 
 # ── LLM Guidance ─────────────────────────────────────────────────────────────────
@@ -314,6 +322,7 @@ class GuidanceBrief(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     alert_id = Column(UUID(as_uuid=True), ForeignKey("alerts.id", ondelete="CASCADE"), nullable=False)
     generation_timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+    generated_at         = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     role_target      = Column(String(50), nullable=False)
     content_markdown = Column(Text, nullable=False)
@@ -328,3 +337,22 @@ class GuidanceBrief(Base):
         return self.content_markdown
 
     alert = relationship("Alert", back_populates="guidance")
+
+
+# ── Scheduled Reports ─────────────────────────────────────────────────────────
+
+class ScheduledReport(Base):
+    """
+    Stores report schedule requests. ARQ worker delivers via webhook.
+    """
+    __tablename__ = "scheduled_reports"
+
+    id              = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    recipient_email = Column(String(255), nullable=False)
+    format          = Column(String(10), nullable=False, default="pdf")     # pdf | csv | xlsx
+    report_type     = Column(String(50), nullable=False, default="weekly")  # weekly | monthly | custom
+    schedule        = Column(String(100), nullable=False)                   # cron expression or label
+    created_by      = Column(String(50), nullable=False)
+    status          = Column(String(20), nullable=False, default="SCHEDULED")  # SCHEDULED | DELIVERED | FAILED
+    created_at      = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    delivered_at    = Column(DateTime(timezone=True), nullable=True)

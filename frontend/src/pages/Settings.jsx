@@ -35,7 +35,8 @@ export default function Settings() {
       try {
         const health = await api.health();
         setBackendStatus('online');
-        setModelInfo({ service: health.service, version: health.version || 'v1.0' });
+        // health() uses raw axios (no axiosInstance), response is health.data
+        setModelInfo({ service: health.data?.service ?? 'AMR-Nexus', version: health.data?.version ?? 'v2.2' });
       } catch {
         setBackendStatus('offline');
       }
@@ -46,13 +47,9 @@ export default function Settings() {
   }, []);
 
   useEffect(() => {
-    api.getMe().then(data => {
-      if (data) setProfile({ name: data.name ?? '', email: data.email ?? '' });
-    }).catch(() => {});
+    api.getMe().then(res => setProfile({ name: res.data.name ?? '', email: res.data.email ?? '' })).catch(() => {});
     const savedNotif = localStorage.getItem('notificationPrefs');
-    if (savedNotif) {
-      try { setNotifications(JSON.parse(savedNotif)); } catch {}
-    }
+    if (savedNotif) setNotifications(JSON.parse(savedNotif));
     const savedRetention = localStorage.getItem('retentionDays');
     if (savedRetention) setRetentionDays(parseInt(savedRetention));
     setApiKeys([{ id: 1, name: 'Default Key', key: 'amr_live_abc123', createdAt: '2025-01-01' }]);
@@ -63,14 +60,24 @@ export default function Settings() {
   }, []);
 
   const updateProfile = async () => {
-    alert('Profile updated (mock)');
-    setEditingProfile(false);
+    try {
+      await api.updateMe({ name: profile.name, email: profile.email });
+      setEditingProfile(false);
+    } catch (err) {
+      alert('Failed to update profile. ' + (err.response?.data?.detail ?? err.message));
+    }
   };
 
-  const updateNotifications = (key, value) => {
+  const updateNotifications = async (key, value) => {
     const newPrefs = { ...notifications, [key]: value };
     setNotifications(newPrefs);
     localStorage.setItem('notificationPrefs', JSON.stringify(newPrefs));
+    // Persist to backend preferences (fire-and-forget)
+    api.updatePreferences({
+      anomaly_alerts:  newPrefs.anomaly,
+      high_mdr_alerts: newPrefs.highMdr,
+      weekly_report:   newPrefs.weeklyReport,
+    }).catch(err => console.warn('[Settings] preferences sync failed:', err));
   };
 
   const generateApiKey = () => {
@@ -84,28 +91,48 @@ export default function Settings() {
   const handleExportCSV = async () => {
     setExporting(true);
     try {
-      await api.exportRecordsCSV();
+      // Use the authenticated API client — proxy handles the base URL
+      const res = await api.getPredictions(10000, 0);
+      const rows = Array.isArray(res.data) ? res.data : [];
+      if (rows.length === 0) { alert('No data to export.'); return; }
+      const headers = Object.keys(rows[0]);
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row => headers.map(h => JSON.stringify(row[h] ?? '')).join(','))
+      ].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `amr_predictions_${new Date().toISOString().slice(0,19)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
     } catch {
-      alert('Export failed');
+      alert('Export failed. Check backend connectivity.');
     } finally {
       setExporting(false);
     }
   };
 
   const exportBackup = async () => {
-    const predictions = await api.getPredictions(10000, 0);
-    const backup = {
-      predictions,
-      settings: { notifications, retentionDays },
-      timestamp: new Date().toISOString()
-    };
-    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `amr_backup_${new Date().toISOString().slice(0,19)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const res = await api.getPredictions(10000, 0);
+      const predictions = Array.isArray(res.data) ? res.data : [];
+      const backup = {
+        predictions,
+        settings: { notifications, retentionDays },
+        timestamp: new Date().toISOString()
+      };
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `amr_backup_${new Date().toISOString().slice(0,19)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Backup export failed. Check backend connectivity.');
+    }
   };
 
   const importBackup = (event) => {

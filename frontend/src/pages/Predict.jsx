@@ -20,8 +20,11 @@ export default function Predict() {
   const { addDraft } = useOfflineDrafts();
 
   useEffect(() => {
-    api.getPredictions(20, 0).then(setRecentPredictions);
+    api.getPredictions(20, 0)
+      .then(res => setRecentPredictions(Array.isArray(res.data) ? res.data : []))
+      .catch(() => setRecentPredictions([]));
   }, []);
+
 
   const handleSubmit = async (formData) => {
     // Check duplicate
@@ -35,7 +38,10 @@ export default function Predict() {
       setCurrentResult(result);
       toast.success('Prediction completed!');
       // Refresh recent list
-      api.getPredictions(20, 0).then(setRecentPredictions);
+      api.getPredictions(20, 0)
+        .then(res => setRecentPredictions(Array.isArray(res.data) ? res.data : []))
+        .catch(() => {});
+
       // Remove any draft for this data (optional)
     } catch (error) {
       toast.error(error.message || 'Prediction failed');

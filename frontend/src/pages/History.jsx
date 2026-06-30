@@ -45,14 +45,15 @@ export default function History() {
   const fetchPredictions = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await api.getPredictions(500, 0);
-      setAllPredictions(data);
+      const res = await api.getPredictions(500, 0);
+      setAllPredictions(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
-      setError('Failed to load history');
+      setError('Failed to load history. Check backend connection.');
     } finally {
       setLoading(false);
     }
   }, []);
+
 
   useEffect(() => {
     fetchPredictions();
@@ -76,17 +77,27 @@ export default function History() {
 
   const handleDeleteSingle = async (id) => {
     if (window.confirm('Delete this record?')) {
-      console.warn('Record deletion not available in current backend version — removed from local view only.');
+      try {
+        await api.deleteRecord(id);
+        toast.success('Deleted');
+      } catch (err) {
+        toast.error('Delete failed: ' + (err.response?.data?.detail ?? err.message));
+      }
       fetchPredictions();
-      toast.success('Deleted');
     }
   };
 
   const handleBulkDelete = async (ids) => {
-    console.warn('Bulk delete not available in current backend version — removed from local view only.');
+    try {
+      await Promise.all(ids.map(id => api.deleteRecord(id)));
+      toast.success(`Deleted ${ids.length} records`);
+    } catch (err) {
+      toast.error('Bulk delete partially failed');
+    }
     fetchPredictions();
     setSelectedRows([]);
   };
+
 
   const handleBulkExport = (ids) => {
     const selectedData = allPredictions.filter(p => ids.includes(p.record_id));
