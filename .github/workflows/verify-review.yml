@@ -2,12 +2,15 @@ name: Enforce PR Review
 on:
   pull_request_review:
     types: [submitted, edited, dismissed]
-  pull_request:
+  pull_request_target: # Changed from pull_request
     types: [opened, synchronize, reopened]
 
 jobs:
   check-reviews:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read       # Required to see repository context
+      pull-requests: write # Required for GitHub API to process PR review endpoints
     steps:
       - name: Check for approvals
         uses: actions/github-script@v7
