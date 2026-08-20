@@ -1,0 +1,8 @@
+﻿venv/
+__pycache__/
+*.pyc
+saved_models/
+logs/
+.env
+*.db
+.DS_Store
